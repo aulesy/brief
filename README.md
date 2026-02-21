@@ -49,7 +49,7 @@ URL → Detect Type → Extract → Chunk → Summarize (LLM) → Cache → Rend
 When the primary extractor can't get content, Brief falls through automatically:
 
 1. **yt-dlp captions** — real subtitles from YouTube (free, instant)
-2. **Local Whisper** — transcribe audio locally via `faster-whisper` (free, ~30s, needs `pip install brief[video]`)
+2. **Local Whisper** — transcribe audio locally via `faster-whisper` 
 3. **API Whisper** — OpenAI Whisper API (needs `BRIEF_STT_API_KEY`)
 4. **Video metadata** — title + description + tags from yt-dlp (no download)
 5. **URL slug** — last resort
