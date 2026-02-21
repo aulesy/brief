@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 def _download_pdf(uri: str) -> str | None:
     """Download a PDF URL to a temp file."""
     try:
-        request = Request(uri, headers={"User-Agent": "brief/0.2"})
+        request = Request(uri, headers={"User-Agent": "brief/0.3"})
         with urlopen(request, timeout=30) as response, tempfile.NamedTemporaryFile(
             delete=False, suffix=".pdf"
         ) as handle:
@@ -66,9 +66,11 @@ def extract(uri: str) -> list[dict[str, Any]]:
             text = page.get_text().strip()
             if len(text) < 20:
                 continue
+            # Truncate at word boundary
+            clean = text[:1000].rsplit(" ", 1)[0] + "..." if len(text) > 1000 else text
             chunks.append({
-                "text": text[:1000],  # cap per page
-                "start_sec": float(page_num),  # page number as position
+                "text": clean,
+                "start_sec": float(page_num),
                 "end_sec": float(page_num + 1),
             })
         doc.close()

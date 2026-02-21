@@ -89,26 +89,29 @@ def render_brief(
     if key_points:
         parts.append("Key: " + " · ".join(key_points[:5]))
 
+    label = "Moments:" if source_type == "VIDEO" else "Sections:"
+
     if depth == 1:
         if ranked_pointers:
             parts.append(
-                "Moments: "
+                f"{label} "
                 + " · ".join(_format_pointer(p) for p in ranked_pointers[:3])
             )
         return "\n".join(parts)
 
     # ── Layer 2: detailed ──
     if ranked_pointers:
-        moment_lines = ["Moments:"]
+        ptr_lines = [label]
         for p in ranked_pointers:
-            moment_lines.append(f"  {_format_pointer(p)}")
-        parts.append("\n".join(moment_lines))
+            ptr_lines.append(f"  {_format_pointer(p)}")
+        parts.append("\n".join(ptr_lines))
 
     if depth == 2:
         return "\n".join(parts)
 
     # ── Layer 3: full chunks ──
-    parts.append("\nFull transcript:")
+    full_label = "\nFull transcript:" if source_type == "VIDEO" else "\nFull content:"
+    parts.append(full_label)
     for p in pointers:  # original order, not re-ranked
         at = p.get("at", "")
         text = p.get("text", "")

@@ -7,10 +7,17 @@ Uses trafilatura for high-quality main content extraction
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _truncate_clean(text: str, max_len: int) -> str:
+    """Truncate at word boundary, never mid-word."""
+    if len(text) <= max_len:
+        return text
+    cut = text[:max_len].rsplit(" ", 1)[0]
+    return cut.rstrip(".,;:!?") + "..."
 
 
 def extract(uri: str) -> list[dict[str, Any]]:
@@ -55,8 +62,8 @@ def extract(uri: str) -> list[dict[str, Any]]:
         if len(para) < 20:
             continue
         chunks.append({
-            "text": para[:500],  # cap per-chunk size
-            "start_sec": float(i),  # use index as position
+            "text": _truncate_clean(para, 500),
+            "start_sec": float(i),
             "end_sec": float(i + 1),
         })
 

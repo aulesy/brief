@@ -55,11 +55,15 @@ def _build_brief(
         start = chunk.get("start_sec", 0.0)
         text = chunk.get("text", "").strip()
         if text:
-            pointers.append({
-                "at": _format_timestamp(start),
+            # Truncate cleanly at ~150 chars for the pointer
+            pointer_text = text[:150].rsplit(" ", 1)[0] + "..." if len(text) > 150 else text
+            p = {
                 "sec": round(start, 2),
-                "text": text[:150],
-            })
+                "text": pointer_text,
+            }
+            if source_type == "video":
+                p["at"] = _format_timestamp(start)
+            pointers.append(p)
 
     import json
     brief = {
