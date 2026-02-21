@@ -138,7 +138,8 @@ def _get_captions(media_url: str) -> CaptionResult | None:
 # ── STT fallback ─────────────────────────────────────────────
 
 def _transcribe_stt(media_url: str) -> CaptionResult | None:
-    api_key = os.getenv("OPENAI_API_KEY")
+    # Use dedicated STT key to avoid picking up unrelated API keys
+    api_key = os.getenv("BRIEF_STT_API_KEY") or os.getenv("BRIEF_LLM_API_KEY")
     if not api_key:
         return None
     try:
