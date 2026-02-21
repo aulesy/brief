@@ -270,9 +270,62 @@ def _transcribe_stt(media_url: str) -> CaptionResult | None:
     return None
 
 
+def _metadata_fallback(media_url: str) -> CaptionResult | None:
+    """Extract video title + description via yt-dlp metadata (no download)."""
+    yt_dlp_path = shutil.which("yt-dlp")
+    if not yt_dlp_path:
+        return None
+
+    try:
+        import json as _json
+        cmd = [
+            yt_dlp_path, "--dump-json",
+            "--no-warnings", "--quiet",
+            "--skip-download",
+            media_url,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+
+        info = _json.loads(result.stdout)
+        title = info.get("title", "")
+        description = info.get("description", "")
+        tags = info.get("tags", [])
+        duration = info.get("duration", 0)
+
+        # Build meaningful text from metadata
+        parts = []
+        if title:
+            parts.append(f"Title: {title}")
+        if description:
+            # Truncate long descriptions
+            desc = description[:2000] if len(description) > 2000 else description
+            parts.append(f"Description: {desc}")
+        if tags:
+            parts.append(f"Tags: {', '.join(tags[:15])}")
+        if duration:
+            mins = int(duration) // 60
+            secs = int(duration) % 60
+            parts.append(f"Duration: {mins}:{secs:02d}")
+
+        text = "\n".join(parts)
+        if text.strip():
+            logger.info("Metadata fallback: title=%s (%d chars)", title[:50], len(text))
+            return CaptionResult(text=text, provider="yt_dlp_metadata")
+
+    except Exception as exc:
+        logger.debug("Metadata fallback failed: %s", exc)
+
+    return None
+
+
 def _slug_heuristic(media_url: str) -> CaptionResult | None:
-    stem = urlparse(media_url).path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
-    tokens = [p for p in stem.replace("_", "-").split("-") if p]
+    """Last resort: guess content from URL path."""
+    parsed = urlparse(media_url)
+    # Skip useless slugs like 'watch'
+    stem = parsed.path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    tokens = [p for p in stem.replace("_", "-").split("-") if p and p != "watch"]
     if not tokens:
         return None
     return CaptionResult(text=f"This video is about {' '.join(tokens)}.", provider="url_slug_heuristic")
@@ -384,7 +437,12 @@ def extract(uri: str) -> list[dict[str, Any]]:
         logger.info("Transcribed via %s", result.provider)
         return _chunk_from_text(result.text)
 
-    # 4. Slug heuristic fallback
+    # 4. Try video metadata (title + description)
+    result = _metadata_fallback(uri)
+    if result:
+        return _chunk_from_text(result.text)
+
+    # 5. Last resort: URL slug
     result = _slug_heuristic(uri)
     if result:
         return _chunk_from_text(result.text)
