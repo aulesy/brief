@@ -8,17 +8,33 @@
 
 # Brief
 
-Content compression for AI agents.
+Brief helps AI agents read and understand content from URLs — webpages, videos, and PDFs. It extracts the content once, compresses it into a structured summary, and caches it so any agent can access it later without re-extracting.
 
-An agent researching a topic finds 10 web pages and a tutorial video. Reading all of them raw costs ~40,000 tokens. With Brief, the agent scans all 11 sources in ~100 tokens, picks the 3 that matter, and reads those in detail for ~2,000 tokens. **Same conclusions, 20x cheaper.**
+## How It Works
 
-## Why
+```mermaid
+graph LR
+    A[URL] --> B{Detect Type}
+    B --> C[Webpage<br/>trafilatura]
+    B --> D[Video<br/>yt-dlp + whisper]
+    B --> E[PDF<br/>pymupdf]
+    C --> F[Chunk]
+    D --> F
+    E --> F
+    F --> G[Summarize<br/>LLM]
+    G --> H[Cache<br/>.briefs/]
+    H --> I[Render<br/>depth 0-3]
+```
 
-| Problem | Without Brief | With Brief |
-|---|---|---|
-| Agent reads a 5,000-word article | 5,000 tokens | 9 tokens (headline) to 200 tokens (detailed) |
-| Two agents research the same topic | Both extract everything from scratch | Second agent reads from `.briefs/` folder — instant |
-| Agent re-visits a source mid-task | Might extract different content each time | Extracted once, frozen. Same ground truth every time |
+Each content type has its own extractor:
+
+- **Webpages** use [trafilatura](https://trafilatura.readthedocs.io/) to pull article text, skipping navigation, ads, and scripts.
+- **Videos** use [yt-dlp](https://github.com/yt-dlp/yt-dlp) to download captions directly from YouTube's API. If no captions are available, [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcribes the audio locally. As a last resort, Brief falls back to the video's title and description.
+- **PDFs** use [pymupdf](https://pymupdf.readthedocs.io/) for page-level text extraction.
+
+After extraction, the content goes through an LLM for summarization. The summary is shaped by your query — asking about "deployment" produces a different summary than asking about "performance." If no LLM is configured, Brief falls back to a simpler heuristic (first/last paragraph + sampled key points).
+
+Results are cached as `.brief.json` files. Calling the same URL again is instant.
 
 ## Install
 
@@ -26,81 +42,35 @@ An agent researching a topic finds 10 web pages and a tutorial video. Reading al
 pip install brief
 ```
 
-Brief works out of the box for all content types (webpages, video, PDF). For LLM-powered summaries, add your API key to a `.env` file — see [LLM Config](#llm-config).
+For LLM-powered summaries, add your API key to a `.env` file — see [Configuration](#configuration). Without an LLM, Brief still works using heuristic summarization.
 
-## How It Works
+## Quick Start
 
-Brief uses **specialized extractors** per content type — it is NOT a web scraper.
-
-```
-URL → Detect Type → Extract → Chunk → Summarize (LLM) → Cache → Render
-```
-
-### Extraction
-
-| Content Type | Extractor | What it gets |
-|---|---|---|
-| **Webpages** | trafilatura | Article text (strips nav, ads, scripts, footers) |
-| **Videos** | yt-dlp | Real captions/subtitles from YouTube's API |
-| **PDFs** | pymupdf | Page-level text extraction |
-
-### Video Fallback Chain
-
-When the primary extractor can't get content, Brief falls through automatically:
-
-1. **yt-dlp captions** — real subtitles from YouTube (free, instant)
-2. **Local Whisper** — transcribe audio locally via `faster-whisper` 
-3. **API Whisper** — OpenAI Whisper API (needs `BRIEF_STT_API_KEY`)
-4. **Video metadata** — title + description + tags from yt-dlp (no download)
-5. **URL slug** — last resort
-
-### Summarization
-
-After extraction, an LLM compresses the content into a structured brief:
-- **Query-aware** — your query shapes the summary angle
-- **Key points** — extracted automatically
-- **Pointers** — timestamped moments (video) or section references (webpage)
-
-No LLM configured? Brief falls back to heuristic extraction (first/last paragraph + sampled key points).
-
-## Use Cases
-
-### 1. Research Agent — scan and dive
+### Single URL
 
 ```python
-from brief import brief_batch, brief
+from brief import brief
 
-# Agent finds 5 URLs from search results
+text = brief("https://fastapi.tiangolo.com/", "what is fastapi", depth=1)
+```
+
+### Scan Multiple URLs
+
+```python
+from brief import brief_batch
+
+# Get one-liner headlines for 5 URLs (~50 tokens total)
 headlines = brief_batch([
     "https://docs.python.org/3/library/asyncio.html",
     "https://fastapi.tiangolo.com/",
     "https://flask.palletsprojects.com/",
-    "https://www.djangoproject.com/",
-    "https://expressjs.com/",
 ], query="python async web framework", depth=0)
 
-# headlines = 5 one-liners, ~50 tokens total
-# Agent reads them, decides FastAPI and Flask are relevant
-
-# Go deeper on the two that matter
+# Read the ones that matter in detail
 detail = brief("https://fastapi.tiangolo.com/", "async support", depth=2)
 ```
 
-### 2. Agent handoff — shared memory
-
-```python
-# Agent A does research, briefs 3 sources
-brief("https://fastapi.tiangolo.com/", "getting started")
-brief("https://docs.pydantic.dev/", "validation")
-brief("https://docs.sqlalchemy.org/", "async engine")
-
-# Agent B picks up the work later
-from brief import check_brief
-data = check_brief("https://fastapi.tiangolo.com/")
-# → instant, no re-extraction. Same ground truth Agent A saw.
-```
-
-### 3. Cross-reference — compare sources
+### Compare Sources
 
 ```python
 from brief import compare
@@ -110,28 +80,26 @@ result = compare(
     query="how do they handle middleware",
     depth=2,
 )
-# → Both sources rendered at same depth, same query. Apples to apples.
 ```
 
-### 4. Video briefing
+### Check Cache
 
 ```python
-from brief import brief
+from brief import check_brief
 
-text = brief("https://youtube.com/watch?v=abc", "how to deploy")
-# → Extracts captions via yt-dlp, summarizes with query focus,
-#   returns timestamped moments like "1:25 Setting up the server..."
+data = check_brief("https://fastapi.tiangolo.com/")
+# Returns the cached brief if it exists, None otherwise
 ```
 
-## Layered Depth
+## Depth Levels
 
-Briefs are progressive. The agent controls how much detail it needs:
+Briefs are progressive — the agent controls how much detail it needs:
 
 ```
 depth=0   headline     ~9 tokens      "[WEBPAGE] FastAPI — high performance web framework"
-depth=1   summary      ~100 tokens    + key points, top 3 moments/sections
-depth=2   detailed     ~700 tokens    + all extracted content, re-ranked by query
-depth=3   full         ~2000 tokens   + complete transcript/text
+depth=1   summary      ~100 tokens    + key points, top 3 sections
+depth=2   detailed     ~700 tokens    + all sections, re-ranked by query
+depth=3   full         ~2000 tokens   + complete extracted text
 ```
 
 Same cached data at every depth. No re-extraction.
@@ -145,7 +113,7 @@ from brief import brief, brief_batch, compare, check_brief
 
 brief(uri, query, depth=1)                    # single source
 brief_batch([uri1, uri2], query, depth=0)     # scan many
-compare([uri1, uri2], query, depth=2)         # cross-reference
+compare([uri1, uri2], query, depth=2)         # side-by-side
 check_brief(uri)                               # cache lookup
 ```
 
@@ -160,7 +128,7 @@ brief --list
 ### MCP (Claude, Cursor)
 
 ```bash
-pip install -e ".[mcp]"
+pip install brief[mcp]
 ```
 
 ```json
@@ -179,8 +147,6 @@ pip install -e ".[mcp]"
 }
 ```
 
-4 tools: `brief_content`, `check_existing_brief`, `list_briefs`, `compare_sources`
-
 ### HTTP API
 
 ```bash
@@ -193,43 +159,39 @@ Every brief saves two files:
 
 ```
 .briefs/
-├── fastapi-tiangolo-com.brief       ← plain text, any agent can read
-├── fastapi-tiangolo-com.brief.json  ← structured data, all layers
-└── _index.sqlite3                   ← fast URI lookups
+├── fastapi-tiangolo-com.brief       ← plain text
+├── fastapi-tiangolo-com.brief.json  ← structured data
+└── _index.sqlite3                   ← URI lookups
 ```
 
-Agents with file access browse `.briefs/` directly. No API, no server, no MCP — just read the file.
+Agents with file access can browse `.briefs/` directly — no API needed.
 
-## LLM Config
+## Configuration
 
-Brief uses an LLM for summarization. Any OpenAI-compatible provider works. Create a `.env` file:
+Brief uses an LLM for summarization. Any OpenAI-compatible provider works. Create a `.env` file in your project root:
 
 ```bash
-# OpenRouter (recommended — one key, every model)
+# OpenRouter (one key, many models)
 BRIEF_LLM_API_KEY=sk-or-v1-your-key
 BRIEF_LLM_BASE_URL=https://openrouter.ai/api/v1
 BRIEF_LLM_MODEL=google/gemma-3-4b-it:free
 ```
 
-Also works with OpenAI, Ollama (local), Groq. See [.env.example](.env.example) for all options.
+Also works with OpenAI, Ollama (local), and Groq. See [.env.example](.env.example) for all options.
 
-No LLM? Brief still works — falls back to heuristic extraction.
-
-### Video Transcription (Optional)
-
-For videos without captions, Brief transcribes locally via `faster-whisper` (included). For cloud transcription via OpenAI Whisper API:
+For videos without captions, Brief transcribes audio locally using `faster-whisper`. If you'd prefer cloud transcription via OpenAI's Whisper API, set:
 
 ```bash
 BRIEF_STT_API_KEY=sk-your-openai-key
 ```
 
-## Supported Content
+## Contributing
 
-| Type | Extractor | Status |
-|---|---|---|
-| Webpages | trafilatura | ✅ Working |
-| Video (YouTube + 1700 sites) | yt-dlp + Whisper | ✅ Working |
-| PDF | pymupdf | ✅ Working |
-| Audio | planned | 🔜 Next |
+Brief is designed to be easy to extend. Each content type is a single file in `brief/extractors/` that implements one function:
 
-Adding a new type = one file in `brief/extractors/`.
+```python
+def extract(uri: str) -> list[dict[str, Any]]:
+    """Return a list of chunks with 'text', 'start_sec', 'end_sec' keys."""
+```
+
+If you'd like to add support for a new content type (audio, spreadsheets, etc.), contributions are welcome.
