@@ -221,8 +221,8 @@ def _transcribe_local(media_url: str) -> CaptionResult | None:
 # ── API STT fallback ─────────────────────────────────────────
 
 def _transcribe_stt(media_url: str) -> CaptionResult | None:
-    # Use dedicated STT key to avoid picking up unrelated API keys
-    api_key = os.getenv("BRIEF_STT_API_KEY") or os.getenv("BRIEF_LLM_API_KEY")
+    # Only use a dedicated STT key — LLM providers (OpenRouter etc.) don't support Whisper
+    api_key = os.getenv("BRIEF_STT_API_KEY")
     if not api_key:
         return None
     try:
