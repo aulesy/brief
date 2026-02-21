@@ -8,7 +8,14 @@
 
 # Brief
 
-Brief helps AI agents read and understand content from URLs — webpages, videos, and PDFs. It extracts the content once, compresses it into a structured summary, and caches it so any agent can access it later without re-extracting.
+When AI agents research a topic, they run into a few problems:
+
+- **Token cost** — reading a full webpage can burn 5,000+ tokens, and most of it isn't relevant to the question at hand.
+- **Duplicate work** — if two agents research the same topic, they each extract everything from scratch.
+- **Content gaps** — most LLMs can't natively watch a YouTube video or read a PDF.
+- **Inconsistency** — re-visiting a URL might produce slightly different content each time.
+
+Brief addresses these by extracting content once (from webpages, videos, and PDFs), compressing it into a structured summary, and caching it. Agents can then scan 10 sources in ~100 tokens, pick the ones that matter, and read those in detail.
 
 ## How It Works
 
