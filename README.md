@@ -26,13 +26,7 @@ An agent researching a topic finds 10 web pages and a tutorial video. Reading al
 pip install brief
 ```
 
-For local video transcription (free, no API key):
-
-```bash
-pip install brief[video]
-```
-
-Brief works out of the box for webpage extraction. For LLM-powered summaries, add your API key to a `.env` file — see [LLM Config](#llm-config).
+Brief works out of the box for all content types (webpages, video, PDF). For LLM-powered summaries, add your API key to a `.env` file — see [LLM Config](#llm-config).
 
 ## How It Works
 
@@ -223,13 +217,9 @@ No LLM? Brief still works — falls back to heuristic extraction.
 
 ### Video Transcription (Optional)
 
-For videos without captions, Brief can transcribe locally or via API:
+For videos without captions, Brief transcribes locally via `faster-whisper` (included). For cloud transcription via OpenAI Whisper API:
 
 ```bash
-# Local (free, no API key needed)
-pip install brief[video]
-
-# OR set a real OpenAI key for Whisper API
 BRIEF_STT_API_KEY=sk-your-openai-key
 ```
 
