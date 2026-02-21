@@ -107,28 +107,58 @@ def _llm_summary(chunks: list[dict[str, Any]]) -> tuple[str, list[str]] | None:
         client = OpenAI(**client_kwargs)
         logger.info("Calling LLM for summary: model=%s base_url=%s", model, base_url or "default")
 
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": f"Summarize this transcript:\n\n{transcript}"},
-            ],
-            temperature=0.2,
-            max_tokens=300,
-        )
+        user_content = f"Summarize this transcript:\n\n{transcript}"
+
+        # Try with system prompt first, fall back to single user message
+        # (some free models don't support system prompts)
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content},
+                ],
+                temperature=0.2,
+                max_tokens=500,
+            )
+        except Exception as sys_err:
+            if "400" in str(sys_err) or "system" in str(sys_err).lower():
+                logger.info("System prompt not supported, retrying as user message")
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "user", "content": f"{_SYSTEM_PROMPT}\n\n{user_content}"},
+                    ],
+                    temperature=0.2,
+                    max_tokens=500,
+                )
+            else:
+                raise
 
         raw = response.choices[0].message.content or ""
         raw = raw.strip()
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
 
-        parsed = json.loads(raw)
-        summary = parsed.get("summary", "")
-        key_points = parsed.get("key_points", [])
+        # Try strict JSON first
+        parsed = None
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            # Try to repair truncated JSON (close open strings/brackets)
+            for fix in [raw + '"]}', raw + '"}', raw + "]}", raw + "}"]:
+                try:
+                    parsed = json.loads(fix)
+                    break
+                except json.JSONDecodeError:
+                    continue
 
-        if isinstance(summary, str) and summary:
-            logger.info("LLM summary generated (%d chars, model=%s)", len(summary), model)
-            return summary[:300], [str(kp)[:100] for kp in key_points[:5]]
+        if parsed:
+            summary = parsed.get("summary", "")
+            key_points = parsed.get("key_points", [])
+            if isinstance(summary, str) and summary:
+                logger.info("LLM summary generated (%d chars, model=%s)", len(summary), model)
+                return summary[:300], [str(kp)[:100] for kp in key_points[:5]]
 
     except Exception as exc:
         logger.warning("LLM summary failed (%s): %s", model, exc)
