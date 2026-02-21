@@ -26,7 +26,48 @@ An agent researching a topic finds 10 web pages and a tutorial video. Reading al
 pip install brief
 ```
 
+For local video transcription (free, no API key):
+
+```bash
+pip install brief[video]
+```
+
 Brief works out of the box for webpage extraction. For LLM-powered summaries, add your API key to a `.env` file — see [LLM Config](#llm-config).
+
+## How It Works
+
+Brief uses **specialized extractors** per content type — it is NOT a web scraper.
+
+```
+URL → Detect Type → Extract → Chunk → Summarize (LLM) → Cache → Render
+```
+
+### Extraction
+
+| Content Type | Extractor | What it gets |
+|---|---|---|
+| **Webpages** | trafilatura | Article text (strips nav, ads, scripts, footers) |
+| **Videos** | yt-dlp | Real captions/subtitles from YouTube's API |
+| **PDFs** | pymupdf | Page-level text extraction |
+
+### Video Fallback Chain
+
+When the primary extractor can't get content, Brief falls through automatically:
+
+1. **yt-dlp captions** — real subtitles from YouTube (free, instant)
+2. **Local Whisper** — transcribe audio locally via `faster-whisper` (free, ~30s, needs `pip install brief[video]`)
+3. **API Whisper** — OpenAI Whisper API (needs `BRIEF_STT_API_KEY`)
+4. **Video metadata** — title + description + tags from yt-dlp (no download)
+5. **URL slug** — last resort
+
+### Summarization
+
+After extraction, an LLM compresses the content into a structured brief:
+- **Query-aware** — your query shapes the summary angle
+- **Key points** — extracted automatically
+- **Pointers** — timestamped moments (video) or section references (webpage)
+
+No LLM configured? Brief falls back to heuristic extraction (first/last paragraph + sampled key points).
 
 ## Use Cases
 
@@ -84,7 +125,8 @@ result = compare(
 from brief import brief
 
 text = brief("https://youtube.com/watch?v=abc", "how to deploy")
-# → Extracts captions, summarizes, returns timestamped moments
+# → Extracts captions via yt-dlp, summarizes with query focus,
+#   returns timestamped moments like "1:25 Setting up the server..."
 ```
 
 ## Layered Depth
@@ -93,7 +135,7 @@ Briefs are progressive. The agent controls how much detail it needs:
 
 ```
 depth=0   headline     ~9 tokens      "[WEBPAGE] FastAPI — high performance web framework"
-depth=1   summary      ~100 tokens    + key points, top moments
+depth=1   summary      ~100 tokens    + key points, top 3 moments/sections
 depth=2   detailed     ~700 tokens    + all extracted content, re-ranked by query
 depth=3   full         ~2000 tokens   + complete transcript/text
 ```
@@ -136,7 +178,7 @@ pip install -e ".[mcp]"
       "env": {
         "BRIEF_LLM_API_KEY": "sk-or-v1-your-key",
         "BRIEF_LLM_BASE_URL": "https://openrouter.ai/api/v1",
-        "BRIEF_LLM_MODEL": "anthropic/claude-3.5-sonnet"
+        "BRIEF_LLM_MODEL": "google/gemma-3-4b-it:free"
       }
     }
   }
@@ -172,20 +214,32 @@ Brief uses an LLM for summarization. Any OpenAI-compatible provider works. Creat
 # OpenRouter (recommended — one key, every model)
 BRIEF_LLM_API_KEY=sk-or-v1-your-key
 BRIEF_LLM_BASE_URL=https://openrouter.ai/api/v1
-BRIEF_LLM_MODEL=anthropic/claude-3.5-sonnet
+BRIEF_LLM_MODEL=google/gemma-3-4b-it:free
 ```
 
 Also works with OpenAI, Ollama (local), Groq. See [.env.example](.env.example) for all options.
 
 No LLM? Brief still works — falls back to heuristic extraction.
 
+### Video Transcription (Optional)
+
+For videos without captions, Brief can transcribe locally or via API:
+
+```bash
+# Local (free, no API key needed)
+pip install brief[video]
+
+# OR set a real OpenAI key for Whisper API
+BRIEF_STT_API_KEY=sk-your-openai-key
+```
+
 ## Supported Content
 
-| Type | Status |
-|---|---|
-| Webpages | ✅ Working |
-| Video (YouTube + 1700 sites) | ✅ Working |
-| PDF | 🔜 Next |
-| Audio | 🔜 Planned |
+| Type | Extractor | Status |
+|---|---|---|
+| Webpages | trafilatura | ✅ Working |
+| Video (YouTube + 1700 sites) | yt-dlp + Whisper | ✅ Working |
+| PDF | pymupdf | ✅ Working |
+| Audio | planned | 🔜 Next |
 
 Adding a new type = one file in `brief/extractors/`.
