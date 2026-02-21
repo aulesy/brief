@@ -80,7 +80,7 @@ def _heuristic_summary(chunks: list[dict[str, Any]]) -> tuple[str, list[str]]:
     return summary, key_points
 
 
-def _llm_summary(chunks: list[dict[str, Any]]) -> tuple[str, list[str]] | None:
+def _llm_summary(chunks: list[dict[str, Any]], query: str | None = None) -> tuple[str, list[str]] | None:
     """Generate summary via any OpenAI-compatible API."""
     api_key, base_url, model = _get_llm_config()
 
@@ -107,7 +107,10 @@ def _llm_summary(chunks: list[dict[str, Any]]) -> tuple[str, list[str]] | None:
         client = OpenAI(**client_kwargs)
         logger.info("Calling LLM for summary: model=%s base_url=%s", model, base_url or "default")
 
-        user_content = f"Summarize this transcript:\n\n{transcript}"
+        if query:
+            user_content = f"Summarize this content, focusing on: {query}\n\n{transcript}"
+        else:
+            user_content = f"Summarize this transcript:\n\n{transcript}"
 
         # Try with system prompt first, fall back to single user message
         # (some free models don't support system prompts)
@@ -166,13 +169,14 @@ def _llm_summary(chunks: list[dict[str, Any]]) -> tuple[str, list[str]] | None:
     return None
 
 
-def summarize(chunks: list[dict[str, Any]]) -> tuple[str, list[str]]:
-    """Generate a neutral summary and key points.
+def summarize(chunks: list[dict[str, Any]], query: str | None = None) -> tuple[str, list[str]]:
+    """Generate a query-focused summary and key points.
 
     Tries LLM first (any OpenAI-compatible provider), falls back to heuristic.
+    When query is provided, the summary focuses on that specific angle.
     Returns (summary, key_points).
     """
-    llm_result = _llm_summary(chunks)
+    llm_result = _llm_summary(chunks, query=query)
     if llm_result is not None:
         return llm_result
 

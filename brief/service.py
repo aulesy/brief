@@ -130,8 +130,8 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
     if not chunks:
         return f"could not extract content from {uri}"
 
-    # 3. Summarize
-    summary, key_points = summarize(chunks)
+    # 3. Summarize (query-focused when available)
+    summary, key_points = summarize(chunks, query=query)
 
     # 4. Build brief
     brief_data = _build_brief(
