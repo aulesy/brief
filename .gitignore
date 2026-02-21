@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+*.pyc
+*.pyo
+*.pyd
+Thumbs.db
+
+# Brief data (local cache, not source code)
+.briefs/
+
+# Secrets
+.env
