@@ -53,7 +53,8 @@ def extract(uri: str) -> list[dict[str, Any]]:
         return []
 
     # Split into paragraph-level chunks
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    # trafilatura separates paragraphs with \n (not \n\n)
+    paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
     if not paragraphs:
         paragraphs = [text]
 
