@@ -66,8 +66,8 @@ def extract(uri: str) -> list[dict[str, Any]]:
             text = page.get_text().strip()
             if len(text) < 20:
                 continue
-            # Truncate at word boundary
-            clean = text[:1000].rsplit(" ", 1)[0] + "..." if len(text) > 1000 else text
+            # Keep full page text — summarizer handles length downstream
+            clean = text[:3000].rsplit(" ", 1)[0] + "..." if len(text) > 3000 else text
             chunks.append({
                 "text": clean,
                 "start_sec": float(page_num),
