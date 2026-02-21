@@ -26,6 +26,9 @@ dev = [
 mcp = [
   "mcp>=1.0.0",
 ]
+video = [
+  "faster-whisper>=1.0.0",
+]
 
 [project.scripts]
 brief = "brief.cli:app"
