@@ -1,6 +1,8 @@
 # Brief
 
-Reading the web is expensive, in tokens, in time, in redundant work. Brief gives agents a shared layer for extracting and understanding content: webpages, videos, and PDFs get pulled once, summarized around the task at hand, and cached so any agent in your pipeline can reuse them instantly. Start with a headline, go deep only where it matters, and let the briefs accumulate into a searchable knowledge base your whole system can draw from.
+Reading the web is expensive — in tokens, in time, in redundant work. Brief gives agents a shared layer for extracting and understanding content: webpages, videos, and PDFs get pulled once, summarized around the task at hand, and cached so any agent in your pipeline can reuse them instantly. Start with a headline, go deep only where it matters, and let the briefs accumulate into a searchable knowledge base your whole system can draw from.
+
+Without Brief, your agent fetches a page, chunks it, summarizes it, and then finally gets to the actual question — burning tokens at every step. Brief collapses that into a single call that returns exactly as much as the agent needs, already shaped around the task.
 
 ```python
 from brief import brief
