@@ -82,12 +82,24 @@ def render_brief(
     # Re-rank pointers by query relevance
     ranked_pointers = _rank_pointers(pointers, query)
 
+    # Derive query-aware key points from ranked chunks/pointers.
+    # Uses full chunks if available (more text = better matching), falls back to pointers.
+    # When no query is given, falls back to the stored static key_points.
+    raw_chunks = brief.get("chunks", [])
+    if query and (raw_chunks or ranked_pointers):
+        source_pool = _rank_pointers(raw_chunks, query) if raw_chunks else ranked_pointers
+        dynamic_key_points = [p.get("text", "") for p in source_pool[:5] if p.get("text")]
+    else:
+        dynamic_key_points = key_points  # static fallback for no-query calls
+
     # ── Layer 1: summary (default) ──
     header = f"[{source_type}: {uri}]"
     parts = [header, summary]
 
-    if key_points:
-        parts.append("Key: " + " · ".join(key_points[:5]))
+    if dynamic_key_points:
+        # Truncate each key point to ~120 chars for readability
+        kp_texts = [kp[:120] + "..." if len(kp) > 120 else kp for kp in dynamic_key_points]
+        parts.append("Key: " + " · ".join(kp_texts))
 
     label = "Moments:" if source_type == "VIDEO" else "Sections:"
 
