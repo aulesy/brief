@@ -20,6 +20,45 @@ logger = logging.getLogger(__name__)
 
 _store = BriefStore()
 
+_VIDEO_SCHEMES = {"youtube.com", "youtu.be", "vimeo.com", "tiktok.com", "dailymotion.com"}
+
+
+def _validate_url(uri: str) -> str | None:
+    """Check if a URL is reachable before attempting extraction.
+
+    Returns None if the URL is valid, or an error string explaining the problem.
+    Skips validation for video platforms (handled by yt-dlp internally).
+    """
+    from urllib.parse import urlparse
+    parsed = urlparse(uri)
+    host = parsed.hostname or ""
+
+    # Skip validation for video platforms — yt-dlp handles these directly
+    if any(vh in host for vh in _VIDEO_SCHEMES):
+        return None
+
+    try:
+        import httpx
+        resp = httpx.head(uri, timeout=8, follow_redirects=True,
+                          headers={"User-Agent": "Mozilla/5.0"})
+        if resp.status_code == 404:
+            return (
+                f"url not found (404) — '{uri}' does not exist. "
+                "Do not guess or construct URLs. Only pass URLs you have explicitly "
+                "navigated to or confirmed exist."
+            )
+        if resp.status_code in (401, 402, 403, 429):
+            return (
+                f"url blocked ({resp.status_code}) — '{uri}' requires authentication "
+                "or is behind a paywall/bot-protection. Brief cannot extract paywalled content."
+            )
+    except Exception:
+        # If HEAD fails entirely (no httpx, network error, etc.) let extraction try anyway
+        pass
+
+    return None
+
+
 
 def _content_hash(text: str) -> str:
     return f"sha256:{hashlib.sha256(text.encode('utf-8')).hexdigest()}"
@@ -117,7 +156,12 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
             rendered = render_brief(cached, query=query, depth=depth)
             return f"brief found\n\n{rendered}"
 
-    # 2. Detect type and extract
+    # 2. Validate URL before attempting extraction
+    url_error = _validate_url(uri)
+    if url_error:
+        return url_error
+
+    # 3. Detect type and extract
     content_type = detect_type(uri)
     logger.info("Extracting %s content from %s", content_type, uri)
 

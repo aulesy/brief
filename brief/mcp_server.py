@@ -39,6 +39,10 @@ def brief_content(uri: str, query: str = "summarize this content", depth: int = 
     version re-ranked for your query — no re-extraction.
     Start with depth=0 or 1. Go deeper only if you need more detail.
 
+    IMPORTANT: Only pass URLs you have explicitly navigated to or
+    confirmed exist. Do NOT construct, guess, or hallucinate URLs.
+    If the URL returns a 404 error, search for the correct URL first.
+
     Args:
         uri: URL of the content (YouTube video, webpage, etc.)
         query: What you want to know about this content
@@ -97,6 +101,9 @@ def compare_sources(uris: list[str], query: str = "summarize this content", dept
     Briefs each URI (or uses cache), then renders all at the
     same depth with the same query for apples-to-apples comparison.
     Start with depth=1, go to 2 for more detail.
+
+    IMPORTANT: Only pass URLs you have explicitly navigated to or
+    confirmed exist. Do NOT construct, guess, or hallucinate URLs.
 
     Args:
         uris: List of URLs to compare
