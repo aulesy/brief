@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .extractors import detect_type
-from .renderer import render_brief
+from .renderer import render_brief, render_brief_file
 from .store import BriefStore
 from .summarizer import summarize
 
@@ -197,9 +197,9 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
     # 5. Render
     rendered = render_brief(brief_data, query=query, depth=depth)
 
-    # 6. Save (always save full depth for the .brief file)
+    # 6. Save (.brief file uses the stable, query-independent format)
     slug = _store._slugify(uri)
-    _store.save(brief_data, rendered_text=render_brief(brief_data, depth=2))
+    _store.save(brief_data, rendered_text=render_brief_file(brief_data))
 
     return f"brief created → .briefs/{slug}.brief\n\n{rendered}"
 
