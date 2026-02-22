@@ -32,7 +32,7 @@ depth=2   detailed     ~700 tokens    + all sections, re-ranked by query
 depth=3   full         ~2000 tokens   + complete extracted text
 ```
 
-Every depth level reads from the same cached extraction. No re-fetching. When a new query is asked, Brief re-summarizes the cached content with the LLM — fast, because the expensive extraction is already done.
+Every depth level reads from the same cached extraction. No re-fetching. When a new query is asked, Brief re-summarizes the cached content with the LLM, fast, because the expensive extraction is already done.
 
 ## Works across content types
 
@@ -86,7 +86,7 @@ data = check_brief("https://fastapi.tiangolo.com/")
 pip install getbrief
 ```
 
-For LLM-powered summaries, add your API key to a `.env` file, see [Configuration](#configuration). Without an LLM, Brief falls back to heuristic summarization (first/last paragraph + sampled key points).
+Brief uses any OpenAI-compatible LLM for summarization. Add your API key to a `.env` file — see [Configuration](#configuration). Free models work well.
 
 ## Interfaces
 
