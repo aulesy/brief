@@ -104,11 +104,7 @@ brief --uri "https://example.com" --depth 0
 brief --list
 ```
 
-### MCP (Claude, Cursor)
-
-```bash
-pip install brief[mcp]
-```
+### MCP
 
 ```json
 {
