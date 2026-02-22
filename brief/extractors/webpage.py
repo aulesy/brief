@@ -25,8 +25,42 @@ def _truncate_clean(text: str, max_len: int) -> str:
     return cut.rstrip(".,;:!?") + "..."
 
 
+def _clean_text(text: str) -> str:
+    """Post-process extracted text for human readability.
+
+    Fixes common trafilatura output issues:
+    - Missing spaces around markdown links
+    - Jammed bullet points on same line
+    - Collapsed inline code fragments
+    - Excessive whitespace
+    """
+    # Ensure space before markdown links: "word[link text]" → "word [link text]"
+    text = re.sub(r'(\w)\[([^\]]+)\]\(', r'\1 [\2](', text)
+    # Ensure space after markdown links: "](url)word" → "](url) word"
+    text = re.sub(r'\]\(([^)]+)\)(\w)', r'](\1) \2', text)
+
+    # Split jammed bullets: "sentence. - Next point" → "sentence.\n- Next point"
+    text = re.sub(r'([.!?])\s*-\s+', r'\1\n- ', text)
+
+    # Split jammed section headers: "content.[¶]" patterns get a newline
+    text = re.sub(r'([.!?])\s*(\w[^.]{5,}\[¶\])', r'\1\n\2', text)
+
+    # Clean up garbled inline code in lists: "for something.code_name" → "code_name — for something"
+    # This is hard to fix generically, so just ensure spacing around periods in odd spots
+    text = re.sub(r'(\w)\.([a-z_-]+)\s*$', r'\1. \2', text, flags=re.MULTILINE)
+
+    # Collapse multiple spaces (but not newlines)
+    text = re.sub(r'[^\S\n]+', ' ', text)
+
+    # Collapse 3+ newlines into 2
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip()
+
+
 def _text_to_chunks(text: str) -> list[dict[str, Any]]:
     """Split extracted text into paragraph-level chunks."""
+    text = _clean_text(text)
     paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
     if not paragraphs:
         paragraphs = [text]
