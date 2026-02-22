@@ -8,13 +8,18 @@
 
 # Brief
 
-When AI agents research a topic, they run into a few problems:
+A content compression layer for AI agents.
 
-- **Token cost** — reading a full webpage can burn 5,000+ tokens, and most of it isn't relevant to the question at hand.
-- **Duplicate work** — if two agents research the same topic, they each extract everything from scratch.
-- **Inconsistency** — re-visiting a URL might produce slightly different content each time.
+```
+Without Brief:
+  Agent reads 10 webpages + 1 video             → ~40,000 tokens
 
-Brief addresses these by extracting content once (from webpages, videos, and PDFs), compressing it into a structured summary, and caching it. Agents can then scan 10 sources in ~100 tokens, pick the ones that matter, and read those in detail.
+With Brief:
+  Agent scans 11 sources at depth=0 (headlines)  → ~100 tokens
+  Agent reads the 3 that matter at depth=2       → ~2,000 tokens
+```
+
+Brief extracts content from webpages, videos, and PDFs, compresses it into query-focused summaries, and caches everything. Agents choose how much detail they need — from a one-line headline to a full transcript — and any agent can reuse what's already been extracted.
 
 ## How It Works
 
