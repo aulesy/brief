@@ -32,13 +32,13 @@ depth=2   detailed     ~700 tokens    + all sections, re-ranked by query
 depth=3   full         ~2000 tokens   + complete extracted text
 ```
 
-Every depth level reads from the same cached extraction. No re-fetching, no re-summarizing.
+Every depth level reads from the same cached extraction. No re-fetching. When a new query is asked, Brief re-summarizes the cached content with the LLM — fast, because the expensive extraction is already done.
 
 ## Works across content types
 
 Brief handles webpages, videos, and PDFs with the same interface:
 
-- **Webpages** - [trafilatura](https://trafilatura.readthedocs.io/) strips navigation, ads, and scripts, leaving just the article. Falls back to [httpx](https://www.python-httpx.org/) with browser headers for sites that block standard requests.
+- **Webpages** - [trafilatura](https://trafilatura.readthedocs.io/) strips navigation, ads, and scripts, leaving just the article. Falls back to [httpx](https://www.python-httpx.org/) with browser headers, then optionally to [Playwright](https://playwright.dev/) for sites behind Cloudflare or bot protection (`pip install getbrief[playwright]`).
 - **Videos** - [yt-dlp](https://github.com/yt-dlp/yt-dlp) fetches captions directly. If none exist, [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcribes the audio locally. Falls back to video metadata (title, description, tags) when neither is available.
 - **PDFs** - [pymupdf](https://pymupdf.readthedocs.io/) extracts text page by page.
 
@@ -134,14 +134,39 @@ Every brief is saved locally as soon as it's extracted:
 
 ```
 .briefs/
-├── fastapi-tiangolo-com.brief       ← plain text
+├── fastapi-tiangolo-com.brief       ← human-readable text
 ├── fastapi-tiangolo-com.brief.json  ← structured data
 └── _index.sqlite3                   ← URI lookups
 ```
 
-This makes `.briefs/` a natural memory layer for your whole pipeline. If one agent briefs a URL, any other agent can reuse it instantly, no re-fetching, no re-summarizing, no API call needed. The more your system runs, the more it already knows.
+This makes `.briefs/` a natural memory layer for your whole pipeline. If one agent briefs a URL, any other agent can reuse it instantly — no re-fetching needed. The more your system runs, the more it already knows.
 
-`.brief` is a plain text format — readable by humans, usable by any agent, and simple enough to share, version, or commit alongside your code.
+`.brief` files use a clean, structured format designed for human readability:
+
+```
+═══ BRIEF ════════════════════════════════════════
+FastAPI
+https://fastapi.tiangolo.com/
+Type: WEBPAGE | Extracted: 2026-02-22
+
+─── SUMMARY ────────────────────────────────────
+FastAPI is a modern, high-performance Python web framework...
+
+─── KEY POINTS ──────────────────────────────
+• Speed comparable to NodeJS and Go
+• Built on Python type hints and Pydantic
+• Automatic OpenAPI documentation
+
+─── SECTIONS ──────────────────────────────────────
+▸ FastAPI framework, high performance, easy to learn
+▸ Fast to code: 200-300% speed increase
+▸ Fewer bugs: 40% reduction in developer errors
+
+─── LINKS ────────────────────────────────────────
+→ Docs: https://fastapi.tiangolo.com
+→ Typer: https://typer.tiangolo.com/
+→ Uvicorn: https://www.uvicorn.dev
+```
 
 ## Configuration
 
