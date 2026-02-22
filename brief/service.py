@@ -160,8 +160,19 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
             if query and query != "summarize this content":
                 chunks = cached.get("chunks", cached.get("pointers", []))
                 if chunks:
+                    # Trim chunks for re-summarization — we don't need the full
+                    # page, just enough context to answer the query (~1200 words
+                    # instead of ~3500). Saves tokens on free LLM tiers.
+                    trimmed = []
+                    word_count = 0
+                    for c in chunks:
+                        text = c.get("text", "")
+                        word_count += len(text.split())
+                        trimmed.append(c)
+                        if word_count >= 1200:
+                            break
                     try:
-                        new_summary, new_key_points = summarize(chunks, query=query)
+                        new_summary, new_key_points = summarize(trimmed, query=query)
                         if new_summary:
                             cached = {**cached, "summary": new_summary, "key_points": new_key_points}
                     except Exception as exc:

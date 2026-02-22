@@ -118,7 +118,11 @@ def _llm_summary(chunks: list[dict[str, Any]], query: str | None = None) -> tupl
         logger.info("Calling LLM for summary: model=%s base_url=%s", model, base_url or "default")
 
         if query:
-            user_content = f"Summarize this content, focusing on: {query}\n\n{transcript}"
+            user_content = (
+                f"The user wants to know: {query}\n\n"
+                f"Lead with the answer to their question, then give broader context. "
+                f"Do not start with a generic description.\n\n{transcript}"
+            )
         else:
             user_content = f"Summarize this transcript:\n\n{transcript}"
 
