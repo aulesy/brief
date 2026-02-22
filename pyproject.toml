@@ -25,6 +25,9 @@ dependencies = [
 dev = [
   "pytest>=8.2.0",
 ]
+playwright = [
+  "playwright>=1.40.0",
+]
 
 [project.scripts]
 brief = "brief.cli:app"

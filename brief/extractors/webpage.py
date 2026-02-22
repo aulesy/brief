@@ -136,6 +136,55 @@ def _extract_httpx_fallback(uri: str) -> str | None:
     return None
 
 
+def _extract_playwright_fallback(uri: str) -> str | None:
+    """Third-tier fallback using Playwright headless Chromium.
+
+    Only fires when trafilatura and httpx both fail.
+    Bypasses Cloudflare JS challenges and bot protection.
+    Requires: pip install getbrief[playwright] && playwright install chromium
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        logger.debug("Playwright not installed, skipping. Run: pip install getbrief[playwright] && playwright install chromium")
+        return None
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                           "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page.goto(uri, wait_until="domcontentloaded", timeout=20000)
+            html = page.content()
+            browser.close()
+
+        if not html or len(html) < 100:
+            return None
+
+        # Run trafilatura on the rendered HTML
+        try:
+            import trafilatura
+            text = trafilatura.extract(
+                html,
+                include_links=False,
+                include_images=False,
+                include_tables=True,
+                favor_recall=True,
+            )
+            if text and len(text.strip()) >= 50:
+                logger.info("Playwright fallback succeeded for %s", uri)
+                return text.strip()
+        except Exception:
+            pass
+
+    except Exception as exc:
+        logger.debug("Playwright fallback failed for %s: %s", uri, exc)
+
+    return None
+
+
 def extract(uri: str) -> list[dict[str, Any]]:
     """Extract text content from a webpage, return as chunks."""
     logger.info("Fetching webpage: %s", uri)
@@ -147,6 +196,11 @@ def extract(uri: str) -> list[dict[str, Any]]:
     if not text:
         logger.info("trafilatura failed, trying httpx fallback for %s", uri)
         text = _extract_httpx_fallback(uri)
+
+    # 3. Fallback: Playwright headless browser (bypasses JS challenges/Cloudflare)
+    if not text:
+        logger.info("httpx failed, trying Playwright fallback for %s", uri)
+        text = _extract_playwright_fallback(uri)
 
     if not text:
         logger.warning("All extractors failed for %s", uri)
