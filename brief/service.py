@@ -153,6 +153,20 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
         cached = _store.check(uri)
         if cached:
             logger.info("Brief cache hit for %s", uri)
+
+            # Re-summarize with the LLM if a query is provided,
+            # so each query gets a fresh, contextual summary — not
+            # a stale one from the original extraction.
+            if query and query != "summarize this content":
+                chunks = cached.get("chunks", cached.get("pointers", []))
+                if chunks:
+                    try:
+                        new_summary, new_key_points = summarize(chunks, query=query)
+                        if new_summary:
+                            cached = {**cached, "summary": new_summary, "key_points": new_key_points}
+                    except Exception as exc:
+                        logger.debug("Re-summarization failed, using cached summary: %s", exc)
+
             rendered = render_brief(cached, query=query, depth=depth)
             return f"brief found\n\n{rendered}"
 
