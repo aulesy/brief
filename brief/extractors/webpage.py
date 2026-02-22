@@ -59,7 +59,7 @@ def _extract_trafilatura(uri: str) -> str | None:
 
         text = trafilatura.extract(
             downloaded,
-            include_links=False,
+            include_links=True,
             include_images=False,
             include_tables=True,
             favor_recall=True,
@@ -108,7 +108,7 @@ def _extract_httpx_fallback(uri: str) -> str | None:
             import trafilatura
             text = trafilatura.extract(
                 html,
-                include_links=False,
+                include_links=True,
                 include_images=False,
                 include_tables=True,
                 favor_recall=True,
@@ -168,7 +168,7 @@ def _extract_playwright_fallback(uri: str) -> str | None:
             import trafilatura
             text = trafilatura.extract(
                 html,
-                include_links=False,
+                include_links=True,
                 include_images=False,
                 include_tables=True,
                 favor_recall=True,
