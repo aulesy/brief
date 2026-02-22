@@ -28,6 +28,7 @@ dev = [
 
 [project.scripts]
 brief = "brief.cli:app"
+brief-mcp = "brief.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["brief*"]

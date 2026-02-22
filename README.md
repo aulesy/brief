@@ -110,8 +110,8 @@ brief --list
 {
   "mcpServers": {
     "brief": {
-      "command": "python",
-      "args": ["-m", "brief.mcp_server"],
+      "command": "uvx",
+      "args": ["--from", "getbrief", "brief-mcp"],
       "env": {
         "BRIEF_LLM_API_KEY": "sk-or-v1-your-key",
         "BRIEF_LLM_BASE_URL": "https://openrouter.ai/api/v1",

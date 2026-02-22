@@ -108,5 +108,9 @@ def compare_sources(uris: list[str], query: str = "summarize this content", dept
     return compare(uris, query=query, depth=depth)
 
 
-if __name__ == "__main__":
+def main() -> None:
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()
