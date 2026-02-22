@@ -363,7 +363,7 @@ def _merge_segments(segments: list[CaptionSegment], window_sec: float = 30.0) ->
             chunks.append({
                 "start_sec": round(window_start, 3),
                 "end_sec": round(window_end, 3),
-                "text": _truncate_clean(merged_text, 500),
+                "text": merged_text,  # store full text — pointer truncation happens in service.py
             })
             current_texts = []
             window_start = seg.start_sec
@@ -377,7 +377,7 @@ def _merge_segments(segments: list[CaptionSegment], window_sec: float = 30.0) ->
         chunks.append({
             "start_sec": round(window_start, 3),
             "end_sec": round(window_end, 3),
-            "text": _truncate_clean(merged_text, 500),
+            "text": merged_text,  # store full text
         })
 
     logger.info("Merged %d segments into %d chunks (%.0fs windows)",

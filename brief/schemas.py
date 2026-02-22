@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -13,7 +15,7 @@ class BriefSource(BaseModel):
 
 
 class BriefPointer(BaseModel):
-    at: str  # human-readable timestamp like "1:25"
+    at: Optional[str] = None  # human-readable timestamp like "1:25" (videos only)
     sec: float = 0.0
     text: str
 
@@ -24,5 +26,6 @@ class Brief(BaseModel):
     summary: str = ""
     key_points: list[str] = Field(default_factory=list)
     pointers: list[BriefPointer] = Field(default_factory=list)
+    chunks: list[dict] = Field(default_factory=list)  # full untruncated text for depth=3
     tokens: int = 0
     created: str = ""

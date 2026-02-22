@@ -84,7 +84,9 @@ def _heuristic_summary(chunks: list[dict[str, Any]]) -> tuple[str, list[str]]:
         summary = _truncate(summary, 297)
 
     step = max(1, len(texts) // 5)
-    key_points = [_truncate(t, 120) for t in texts[::step]][:5]
+    # Prefer longer paragraphs (more likely to be real content, not boilerplate)
+    substantive = [t for t in texts if len(t) > 100] or texts
+    key_points = [_truncate(t, 120) for t in substantive[::max(1, len(substantive) // 5)]][:5]
     return summary, key_points
 
 

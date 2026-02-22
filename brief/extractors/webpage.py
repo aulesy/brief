@@ -36,7 +36,7 @@ def _text_to_chunks(text: str) -> list[dict[str, Any]]:
         if len(para) < 20:
             continue
         chunks.append({
-            "text": _truncate_clean(para, 500),
+            "text": para,  # store full text — pointer truncation happens in service.py
             "start_sec": float(i),
             "end_sec": float(i + 1),
         })

@@ -17,11 +17,10 @@ Usage:
     data = check_brief("https://example.com/article")
 """
 
-from .renderer import render_brief
-from .service import brief, get_brief_data, compare
-from .store import BriefStore
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-_store = BriefStore()
+from .renderer import render_brief
+from .service import brief, get_brief_data, compare, _store
 
 
 def check_brief(uri: str):
@@ -34,14 +33,26 @@ def brief_batch(
     query: str = "summarize this content",
     depth: int = 0,
 ) -> list[str]:
-    """Brief multiple URIs. Returns list of rendered briefs.
+    """Brief multiple URIs in parallel. Returns list of rendered briefs.
 
     Ideal for research workflows:
       results = brief_batch(urls, query="how to deploy", depth=0)
       # → 10 headlines, ~90 tokens total
       # Agent picks relevant ones, then goes deeper on each
     """
-    return [brief(uri, query, depth=depth) for uri in uris]
+    results: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=min(8, len(uris))) as executor:
+        future_to_uri = {
+            executor.submit(brief, uri, query, False, depth): uri
+            for uri in uris
+        }
+        for future in as_completed(future_to_uri):
+            uri = future_to_uri[future]
+            try:
+                results[uri] = future.result()
+            except Exception as exc:
+                results[uri] = f"error: {exc}"
+    return [results[uri] for uri in uris]  # preserve original order
 
 
 __all__ = ["brief", "render_brief", "check_brief", "get_brief_data", "brief_batch", "compare"]
