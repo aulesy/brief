@@ -83,7 +83,7 @@ data = check_brief("https://fastapi.tiangolo.com/")
 ## Install
 
 ```bash
-pip install brief
+pip install getbrief
 ```
 
 For LLM-powered summaries, add your API key to a `.env` file, see [Configuration](#configuration). Without an LLM, Brief falls back to heuristic summarization (first/last paragraph + sampled key points).
