@@ -8,18 +8,7 @@
 
 # Brief
 
-A content compression layer for AI agents.
-
-```
-Without Brief:
-  Agent reads 10 webpages + 1 video             → ~40,000 tokens
-
-With Brief:
-  Agent scans 11 sources at depth=0 (headlines)  → ~100 tokens
-  Agent reads the 3 that matter at depth=2       → ~2,000 tokens
-```
-
-Brief extracts content from webpages, videos, and PDFs, compresses it into query-focused summaries, and caches everything. Agents choose how much detail they need — from a one-line headline to a full transcript — and any agent can reuse what's already been extracted.
+Brief extracts content from webpages, videos, and PDFs, compresses it into query-focused summaries, and caches the result. Agents pick how much detail they need using depth levels — from a one-line headline to a full transcript — and anything already extracted is reused instantly.
 
 ## How It Works
 
