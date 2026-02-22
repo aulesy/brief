@@ -55,6 +55,14 @@ def _get_llm_config() -> tuple[str | None, str | None, str]:
     return api_key, base_url, model
 
 
+def _truncate(text: str, max_chars: int) -> str:
+    """Truncate at the nearest word boundary, never mid-word."""
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars].rsplit(None, 1)[0]
+    return cut + "..."
+
+
 def _heuristic_summary(chunks: list[dict[str, Any]]) -> tuple[str, list[str]]:
     """Fallback: extract summary from chunk text without LLM."""
     if not chunks:
@@ -73,10 +81,10 @@ def _heuristic_summary(chunks: list[dict[str, Any]]) -> tuple[str, list[str]]:
         summary = first
 
     if len(summary) > 300:
-        summary = summary[:297] + "..."
+        summary = _truncate(summary, 297)
 
     step = max(1, len(texts) // 5)
-    key_points = [t[:100] for t in texts[::step]][:5]
+    key_points = [_truncate(t, 120) for t in texts[::step]][:5]
     return summary, key_points
 
 
@@ -161,7 +169,7 @@ def _llm_summary(chunks: list[dict[str, Any]], query: str | None = None) -> tupl
             key_points = parsed.get("key_points", [])
             if isinstance(summary, str) and summary:
                 logger.info("LLM summary generated (%d chars, model=%s)", len(summary), model)
-                return summary[:300], [str(kp)[:100] for kp in key_points[:5]]
+                return _truncate(summary, 300), [_truncate(str(kp), 120) for kp in key_points[:5]]
 
     except Exception as exc:
         logger.warning("LLM summary failed (%s): %s", model, exc)

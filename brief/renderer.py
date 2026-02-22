@@ -110,9 +110,10 @@ def render_brief(
         return "\n".join(parts)
 
     # ── Layer 3: full chunks ──
+    raw_chunks = brief.get("chunks", pointers)  # fall back to pointers for old briefs
     full_label = "\nFull transcript:" if source_type == "VIDEO" else "\nFull content:"
     parts.append(full_label)
-    for p in pointers:  # original order, not re-ranked
+    for p in raw_chunks:  # original order, not re-ranked
         at = p.get("at", "")
         text = p.get("text", "")
         if at:

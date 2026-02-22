@@ -51,11 +51,12 @@ def _build_brief(
     full_text = " ".join(c.get("text", "") for c in chunks)
 
     pointers = []
+    raw_chunks = []
     for chunk in chunks:
         start = chunk.get("start_sec", 0.0)
         text = chunk.get("text", "").strip()
         if text:
-            # Truncate cleanly at ~150 chars for the pointer
+            # Truncate cleanly at ~150 chars for the pointer preview
             pointer_text = text[:150].rsplit(" ", 1)[0] + "..." if len(text) > 150 else text
             p = {
                 "sec": round(start, 2),
@@ -64,6 +65,12 @@ def _build_brief(
             if source_type == "video":
                 p["at"] = _format_timestamp(start)
             pointers.append(p)
+
+            # Store full untruncated text for depth=3
+            raw = {"sec": round(start, 2), "text": text}
+            if source_type == "video":
+                raw["at"] = _format_timestamp(start)
+            raw_chunks.append(raw)
 
     import json
     brief = {
@@ -77,6 +84,7 @@ def _build_brief(
         "summary": summary,
         "key_points": key_points,
         "pointers": pointers,
+        "chunks": raw_chunks,
         "tokens": 0,
         "created": datetime.now(timezone.utc).isoformat(),
     }
