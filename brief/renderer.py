@@ -75,8 +75,9 @@ def render_brief(
 
     # ── Layer 0: headline ──
     if depth == 0:
-        # First sentence of summary
-        headline = summary.split(".")[0].strip() if summary else "No summary"
+        headline = summary[:160].rsplit(" ", 1)[0].rstrip(".,;:!?") + "..." if len(summary) > 160 else summary
+        if not headline:
+            headline = "No summary"
         return f"[{source_type}] {headline}"
 
     # Re-rank pointers by query relevance
