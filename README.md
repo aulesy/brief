@@ -1,19 +1,23 @@
+<div align="center">
+  <img src="assets/logo.png" alt="Brief Logo" width="300" />
+</div>
+
 # Brief
 
-Reading the web is expensive — in tokens, in time, in redundant work. Brief gives agents a shared layer for extracting and understanding content: webpages, videos, and PDFs get pulled once, summarized around the task at hand, and cached so any agent in your pipeline can reuse them instantly. Start with a headline, go deep only where it matters, and let the briefs accumulate into a searchable knowledge base your whole system can draw from.
+Reading the web is expensive, in tokens, in time, in redundant work. Brief gives agents a shared layer for extracting and understanding content: webpages, videos, and PDFs get pulled once, summarized around the task at hand, and cached so any agent in your pipeline can reuse them instantly. Start with a headline, go deep only where it matters, and let the briefs accumulate into a searchable knowledge base your whole system can draw from.
 
-Without Brief, your agent fetches a page, chunks it, summarizes it, and then finally gets to the actual question — burning tokens at every step. Brief collapses that into a single call that returns exactly as much as the agent needs, already shaped around the task.
+Without Brief, your agent fetches a page, chunks it, summarizes it, and then finally gets to the actual question, burning tokens at every step. Brief collapses that into a single call that returns exactly as much as the agent needs, already shaped around the task.
 
 ```python
 from brief import brief
 
-# ~9 tokens — enough to know if this page is worth reading
+# ~9 tokens - enough to know if this page is worth reading
 brief("https://fastapi.tiangolo.com/", "what is fastapi", depth=0)
 
-# ~100 tokens — key points and top sections
+# ~100 tokens - key points and top sections
 brief("https://fastapi.tiangolo.com/", "what is fastapi", depth=1)
 
-# ~700 tokens — full structured summary, re-ranked around your query
+# ~700 tokens - full structured summary, re-ranked around your query
 brief("https://fastapi.tiangolo.com/", "async support", depth=2)
 ```
 
@@ -22,7 +26,7 @@ brief("https://fastapi.tiangolo.com/", "async support", depth=2)
 The agent controls how much it reads:
 
 ```
-depth=0   headline     ~9 tokens      "[WEBPAGE] FastAPI — high performance web framework"
+depth=0   headline     ~9 tokens      "[WEBPAGE] FastAPI - high performance web framework"
 depth=1   summary      ~100 tokens    + key points, top 3 sections
 depth=2   detailed     ~700 tokens    + all sections, re-ranked by query
 depth=3   full         ~2000 tokens   + complete extracted text
@@ -34,9 +38,9 @@ Every depth level reads from the same cached extraction. No re-fetching, no re-s
 
 Brief handles webpages, videos, and PDFs with the same interface:
 
-- **Webpages** — [trafilatura](https://trafilatura.readthedocs.io/) strips navigation, ads, and scripts, leaving just the article. Falls back to [httpx](https://www.python-httpx.org/) with browser headers for sites that block standard requests.
-- **Videos** — [yt-dlp](https://github.com/yt-dlp/yt-dlp) fetches captions directly. If none exist, [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcribes the audio locally. Falls back to video metadata (title, description, tags) when neither is available.
-- **PDFs** — [pymupdf](https://pymupdf.readthedocs.io/) extracts text page by page.
+- **Webpages** - [trafilatura](https://trafilatura.readthedocs.io/) strips navigation, ads, and scripts, leaving just the article. Falls back to [httpx](https://www.python-httpx.org/) with browser headers for sites that block standard requests.
+- **Videos** - [yt-dlp](https://github.com/yt-dlp/yt-dlp) fetches captions directly. If none exist, [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcribes the audio locally. Falls back to video metadata (title, description, tags) when neither is available.
+- **PDFs** - [pymupdf](https://pymupdf.readthedocs.io/) extracts text page by page.
 
 ## Common patterns
 
@@ -82,7 +86,7 @@ data = check_brief("https://fastapi.tiangolo.com/")
 pip install brief
 ```
 
-For LLM-powered summaries, add your API key to a `.env` file — see [Configuration](#configuration). Without an LLM, Brief falls back to heuristic summarization (first/last paragraph + sampled key points).
+For LLM-powered summaries, add your API key to a `.env` file, see [Configuration](#configuration). Without an LLM, Brief falls back to heuristic summarization (first/last paragraph + sampled key points).
 
 ## Interfaces
 
@@ -139,7 +143,9 @@ Every brief is saved locally as soon as it's extracted:
 └── _index.sqlite3                   ← URI lookups
 ```
 
-This makes `.briefs/` a natural knowledge base for your whole pipeline. If one agent briefs a URL, any other agent can reuse it instantly — no re-fetching, no re-summarizing, no API call needed. The more your system runs, the more it already knows.
+This makes `.briefs/` a natural memory layer for your whole pipeline. If one agent briefs a URL, any other agent can reuse it instantly, no re-fetching, no re-summarizing, no API call needed. The more your system runs, the more it already knows.
+
+`.brief` is a plain text format — readable by humans, usable by any agent, and simple enough to share, version, or commit alongside your code.
 
 ## Configuration
 
@@ -162,7 +168,7 @@ BRIEF_STT_API_KEY=sk-your-openai-key
 
 ## Contributing
 
-Each content type is a single file in `brief/extractors/` that implements one function:
+Brief is designed to be easy to extend and contributions are welcome — whether that's a new content type, a better summarization strategy, or improvements to the CLI or API. New extractors live in `brief/extractors/` and each one is just a single file implementing one function:
 
 ```python
 def extract(uri: str) -> list[dict[str, Any]]:
