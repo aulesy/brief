@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
@@ -191,6 +192,7 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
                 if chunks:
                     trimmed = _trim_chunks(chunks)
                     try:
+                        print("⟳ Summarizing for new query...", file=sys.stderr, flush=True)
                         new_summary, new_key_points = summarize(trimmed, query=query)
                         if new_summary:
                             # Save per-query .brief file
@@ -222,7 +224,7 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
 
     # Detect type and extract
     content_type = detect_type(uri)
-    logger.info("Extracting %s content from %s", content_type, uri)
+    print(f"⟳ Extracting {content_type} content...", file=sys.stderr, flush=True)
 
     chunks: list[dict[str, Any]] = []
     if content_type == "video":
@@ -248,6 +250,7 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
         return f"could not extract content from {uri}"
 
     # Summarize
+    print("⟳ Summarizing with LLM...", file=sys.stderr, flush=True)
     summary, key_points = summarize(chunks, query=query)
 
     # Build brief data
