@@ -106,8 +106,8 @@ def _llm_summary(chunks: list[dict[str, Any]], query: str | None = None) -> tupl
 
     transcript = " ".join(c.get("text", "") for c in chunks)
     words = transcript.split()
-    if len(words) > 3500:
-        transcript = " ".join(words[:3500])
+    if len(words) > 1500:
+        transcript = " ".join(words[:1500])
 
     try:
         client_kwargs: dict[str, Any] = {"api_key": api_key}
