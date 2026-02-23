@@ -19,7 +19,7 @@ app = typer.Typer(add_completion=False, pretty_exceptions_enable=False)
 def main(
     uri: str = typer.Option(None, help="Content URI to brief (video URL, page URL, etc.)"),
     query: str = typer.Option("summarize this content", help="What the consuming agent wants to know"),
-    depth: int = typer.Option(1, "--depth", min=0, max=3, help="Detail level: 0=headline, 1=summary, 2=detailed, 3=full"),
+    depth: int = typer.Option(1, "--depth", min=0, max=2, help="Detail level: 0=headline, 1=summary, 2=deep dive"),
     list_briefs: bool = typer.Option(False, "--list", help="List all existing briefs"),
     raw: bool = typer.Option(False, "--raw", help="Output raw JSON instead of rendered text"),
     force: bool = typer.Option(False, "--force", help="Skip cache and re-extract"),
@@ -31,16 +31,18 @@ def main(
         from .store import BriefStore
 
         store = BriefStore()
-        briefs = store.list_all()
-        if not briefs:
+        groups = store.list_all()
+        if not groups:
             typer.echo("No briefs found. Create one with: brief --uri <URL> --query <QUERY>")
             raise typer.Exit()
 
-        typer.echo(f"Found {len(briefs)} brief(s) in .briefs/:\n")
-        for b in briefs:
-            typer.echo(f"  [{b['type'].upper()}] {b['uri']}")
-            typer.echo(f"    {b['summary']}")
-            typer.echo(f"    File: {b['file']}\n")
+        typer.echo(f"Found {len(groups)} source(s) in .briefs/:\n")
+        for g in groups:
+            source_type = g.get("type", "").upper() or "UNKNOWN"
+            typer.echo(f"  [{source_type}] {g.get('uri', g['slug'])}")
+            for b in g.get("briefs", []):
+                typer.echo(f"    • {b['file']}: {b.get('preview', '')[:80]}")
+            typer.echo()
         raise typer.Exit()
 
     if not uri:

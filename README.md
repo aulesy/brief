@@ -92,8 +92,17 @@ data = check_brief("https://fastapi.tiangolo.com/")
 
 ## Install
 
+Requires Python 3.12+.
+
 ```bash
 pip install getbrief
+```
+
+For video transcription, you'll need [ffmpeg](https://ffmpeg.org/) installed. For bot-protected sites:
+
+```bash
+pip install getbrief[playwright]
+playwright install chromium
 ```
 
 Brief uses any OpenAI-compatible LLM for summarization. Add your API key to a `.env` file, see [Configuration](#configuration). Free models work well.
@@ -138,6 +147,19 @@ brief --list
 uvicorn brief.api:app --port 8080
 ```
 
+```bash
+# Brief a URL
+curl -X POST http://localhost:8080/brief \
+  -H "Content-Type: application/json" \
+  -d '{"uri": "https://fastapi.tiangolo.com/", "query": "async support", "depth": 1}'
+
+# List all briefs
+curl http://localhost:8080/briefs
+
+# Health check
+curl http://localhost:8080/health
+```
+
 ## The `.briefs/` folder
 
 Every URL gets its own subdirectory. Each (query, depth) adds a new `.brief` file:
@@ -166,6 +188,8 @@ BRIEF_LLM_BASE_URL=https://openrouter.ai/api/v1
 BRIEF_LLM_MODEL=google/gemma-3-4b-it:free
 ```
 
+`OPENAI_API_KEY` also works as a fallback if `BRIEF_LLM_API_KEY` is not set.
+
 Also works with OpenAI, Ollama (local), and Groq. See [.env.example](.env.example) for all options.
 
 For videos without captions, Brief transcribes audio locally using `faster-whisper`. To use OpenAI's Whisper API instead:
@@ -173,6 +197,20 @@ For videos without captions, Brief transcribes audio locally using `faster-whisp
 ```bash
 BRIEF_STT_API_KEY=sk-your-openai-key
 ```
+
+For GitHub repos, the public API is rate-limited to 60 requests/hour. Set a token for higher limits:
+
+```bash
+GITHUB_TOKEN=ghp_your-token
+```
+
+## Troubleshooting
+
+- **Paywalled / auth-protected content** - Brief returns a clear error for 401/403/429 responses. It cannot extract content behind logins or paywalls.
+- **Bot protection (Cloudflare, etc.)** - Install Playwright: `pip install getbrief[playwright] && playwright install chromium`
+- **Stale or bad summary** - Use `--force` to skip cache and re-extract: `brief --uri <URL> --force`
+- **Clear all cached data** - Delete the `.briefs/` folder: `rm -rf .briefs/`
+- **LLM not responding** - Check your `.env` file has valid API keys. Brief falls back to a heuristic summary if the LLM is unavailable.
 
 ## Contributing
 

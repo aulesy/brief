@@ -15,6 +15,7 @@ app = FastAPI(title="Brief Service", version="0.1.0")
 class BriefRequest(BaseModel):
     uri: str
     query: str = "summarize this content"
+    depth: int = 1
     force: bool = False
 
 
@@ -36,7 +37,7 @@ def create_brief(req: BriefRequest):
     store = BriefStore()
     was_cached = store.check(req.uri) is not None
 
-    rendered = brief(req.uri, req.query, force=req.force)
+    rendered = brief(req.uri, req.query, force=req.force, depth=req.depth)
     return BriefResponse(rendered=rendered, cached=was_cached and not req.force)
 
 
