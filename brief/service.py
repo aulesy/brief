@@ -145,6 +145,10 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
     # Clamp depth to 0-2
     depth = max(0, min(2, depth))
 
+    # Clean up URI — trailing commas/semicolons sneak in from CLI and agents
+    uri = uri.strip().rstrip(",;")
+    query = query.strip().rstrip(",;")
+
     slug = _store._slugify(uri)
 
     if not force:

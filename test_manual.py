@@ -85,8 +85,8 @@ check("check_existing mentions how to install", "install" in existing.lower(), e
 
 section("TEST 5: Content types")
 
-pdf_url = "https://www.w3.org/WAI/WCAG21/wcag21.pdf"
-r_pdf = brief(pdf_url, "accessibility guidelines", depth=1)
+pdf_url = "https://www.rvclibrary.org/wp-content/uploads/2022/04/May-Short-Stories.pdf"
+r_pdf = brief(pdf_url, "what stories are in this", depth=1)
 check("PDF extraction works", bool(r_pdf) and "brief" in r_pdf.lower())
 
 reddit_url = "https://www.reddit.com/r/Python/comments/x3y5zn/what_are_some_underrated_python_libraries/"
