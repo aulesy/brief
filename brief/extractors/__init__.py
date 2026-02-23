@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 MEDIA_EXTENSIONS = {".mp4", ".webm", ".m3u8", ".mpd", ".mov", ".avi", ".mkv"}
 VIDEO_HOSTS = {"youtube.com", "youtu.be", "vimeo.com", "tiktok.com", "dailymotion.com"}
 REDDIT_HOSTS = {"reddit.com", "old.reddit.com", "np.reddit.com"}
+GITHUB_HOSTS = {"github.com"}
 
 
 def detect_type(uri: str) -> str:
@@ -30,6 +31,10 @@ def detect_type(uri: str) -> str:
     # Check known Reddit hosts
     if any(rh in host for rh in REDDIT_HOSTS):
         return "reddit"
+
+    # Check known GitHub hosts
+    if any(gh in host for gh in GITHUB_HOSTS):
+        return "github"
 
     # Default: treat as webpage
     return "webpage"

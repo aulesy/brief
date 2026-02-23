@@ -23,6 +23,7 @@ _store = BriefStore()
 
 _VIDEO_SCHEMES = {"youtube.com", "youtu.be", "vimeo.com", "tiktok.com", "dailymotion.com"}
 _REDDIT_HOSTS = {"reddit.com", "old.reddit.com", "np.reddit.com"}
+_GITHUB_HOSTS = {"github.com"}
 
 
 def _validate_url(uri: str) -> str | None:
@@ -39,6 +40,8 @@ def _validate_url(uri: str) -> str | None:
     if any(vh in host for vh in _VIDEO_SCHEMES):
         return None
     if any(rh in host for rh in _REDDIT_HOSTS):
+        return None
+    if any(gh in host for gh in _GITHUB_HOSTS):
         return None
 
     try:
@@ -231,6 +234,9 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
     elif content_type == "reddit":
         from .extractors.reddit import extract as extract_reddit
         chunks = extract_reddit(uri)
+    elif content_type == "github":
+        from .extractors.github import extract as extract_github
+        chunks = extract_github(uri)
     elif content_type == "pdf":
         from .extractors.pdf import extract as extract_pdf
         chunks = extract_pdf(uri)
