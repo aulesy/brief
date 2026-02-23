@@ -19,7 +19,6 @@ Usage:
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from .renderer import render_brief
 from .service import brief, get_brief_data, compare, _store
 
 
@@ -37,8 +36,8 @@ def brief_batch(
 
     Ideal for research workflows:
       results = brief_batch(urls, query="how to deploy", depth=0)
-      # → 10 headlines, ~90 tokens total
-      # Agent picks relevant ones, then goes deeper on each
+      # → headlines for each URL
+      # Agent picks relevant ones, then goes deeper
     """
     results: dict[str, str] = {}
     with ThreadPoolExecutor(max_workers=min(8, len(uris))) as executor:
@@ -55,4 +54,4 @@ def brief_batch(
     return [results[uri] for uri in uris]  # preserve original order
 
 
-__all__ = ["brief", "render_brief", "check_brief", "get_brief_data", "brief_batch", "compare"]
+__all__ = ["brief", "check_brief", "get_brief_data", "brief_batch", "compare"]

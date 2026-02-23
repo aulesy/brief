@@ -26,18 +26,16 @@ mcp = FastMCP("brief")
 
 @mcp.tool()
 def brief_content(uri: str, query: str = "summarize this content", depth: int = 1) -> str:
-    """Brief a piece of content (video, webpage, PDF).
+    """Brief a piece of content (video, webpage, PDF, Reddit, GitHub).
 
     Extracts content, generates a summary, caches the result.
     Returns a text brief at the requested depth:
-      depth=0  headline    ~10 tokens
-      depth=1  summary     ~80 tokens (default)
-      depth=2  detailed    ~200 tokens
-      depth=3  full        all extracted content
+      depth=0  headline    one sentence, is this relevant?
+      depth=1  summary     2-3 sentences + key points (default)
+      depth=2  deep dive   detailed analysis with specifics
 
-    If a brief already exists for this URI, returns the cached
-    version re-ranked for your query — no re-extraction.
-    Start with depth=0 or 1. Go deeper only if you need more detail.
+    Each (query, depth) is cached. Same question = instant.
+    Start with depth=0 or 1. Go to 2 only when ready to build.
 
     IMPORTANT: Only pass URLs you have explicitly navigated to or
     confirmed exist. Do NOT construct, guess, or hallucinate URLs.
@@ -46,7 +44,7 @@ def brief_content(uri: str, query: str = "summarize this content", depth: int = 
     Args:
         uri: URL of the content (YouTube video, webpage, etc.)
         query: What you want to know about this content
-        depth: Detail level 0-3 (0=headline, 1=summary, 2=detailed, 3=full)
+        depth: Detail level 0-2 (0=headline, 1=summary, 2=deep dive)
     """
     from .service import brief
 
@@ -111,7 +109,7 @@ def compare_sources(uris: list[str], query: str = "summarize this content", dept
     Args:
         uris: List of URLs to compare
         query: The comparison question
-        depth: Detail level for all sources (0-3)
+        depth: Detail level for all sources (0-2)
     """
     from .service import compare
 

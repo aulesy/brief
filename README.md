@@ -11,7 +11,7 @@ Without Brief, your agent fetches a page, chunks it, summarizes it, and then fin
 ```python
 from brief import brief
 
-# ~9 tokens - enough to know if this page is worth reading
+# ~30 tokens - enough to know if this page is worth reading
 brief("https://fastapi.tiangolo.com/", "what is fastapi", depth=0)
 
 # ~100 tokens - key points and top sections
@@ -26,10 +26,10 @@ brief("https://fastapi.tiangolo.com/", "async support", depth=2)
 The agent controls how much it reads:
 
 ```
-depth=0   headline     ~9 tokens      "[WEBPAGE] FastAPI - high performance web framework"
-depth=1   summary      ~100 tokens    + key points, top 3 sections
-depth=2   detailed     ~700 tokens    + all sections, re-ranked by query
-depth=3   full         ~2000 tokens   + complete extracted text
+depth=0   headline     ~30 tokens     quick triage - is this page worth reading?
+depth=1   summary      ~100 tokens    summary + key points + top sections
+depth=2   detailed     ~500 tokens    all sections, re-ranked by query
+depth=3   full         all content    complete extracted text
 ```
 
 Every depth level reads from the same cached extraction. No re-fetching. When a new query is asked, Brief re-summarizes the cached content with the LLM, fast, because the expensive extraction is already done.
@@ -86,7 +86,7 @@ data = check_brief("https://fastapi.tiangolo.com/")
 pip install getbrief
 ```
 
-Brief uses any OpenAI-compatible LLM for summarization. Add your API key to a `.env` file — see [Configuration](#configuration). Free models work well.
+Brief uses any OpenAI-compatible LLM for summarization. Add your API key to a `.env` file, see [Configuration](#configuration). Free models work well.
 
 ## Interfaces
 
@@ -142,9 +142,9 @@ Every URL gets its own subdirectory. Each query adds a new `.brief` file:
 └── _index.sqlite3                ← fast lookups
 ```
 
-One agent researches, another reasons, another writes — nothing gets fetched or summarized twice. Each `.brief` file includes a TRAIL section listing sibling briefs, so any agent can see what else has been researched.
+One agent researches, another reasons, another writes, nothing gets fetched or summarized twice. Each `.brief` file includes a TRAIL section listing sibling briefs, so any agent can see what else has been researched.
 
-Agents with MCP tools call `brief_content()`. Agents with file access can read `.briefs/` directly, or `grep` across files. No special tools required — just plain text.
+Any agent can read `.briefs/` directly, just plain text files, no special tools needed. Agents can also use `brief_content()`, `check_existing_brief()`, or `grep` across files to find what they need.
 
 
 ## Configuration
@@ -168,7 +168,7 @@ BRIEF_STT_API_KEY=sk-your-openai-key
 
 ## Contributing
 
-Brief is designed to be easy to extend and contributions are welcome — whether that's a new content type, a better summarization strategy, or improvements to the CLI or API. New extractors live in `brief/extractors/` and each one is just a single file implementing one function:
+Brief is designed to be easy to extend and contributions are welcome, whether that's a new content type, a better summarization strategy, or improvements to the CLI or API. New extractors live in `brief/extractors/` and each one is just a single file implementing one function:
 
 ```python
 def extract(uri: str) -> list[dict[str, Any]]:

@@ -1,8 +1,13 @@
 """Brief Service — the entry point.
 
-Agents call brief(uri, query) to get a rendered text brief.
-Extraction happens once, rendering happens per query.
-Each query produces a separate .brief file in the URL's subdirectory.
+Agents call brief(uri, query, depth) to get a rendered text brief.
+Extraction happens once, summarization happens per (query, depth).
+
+Rules:
+1. Extract once → save raw chunks to _source.json
+2. Each (query, depth) → one LLM call → one .brief file
+3. Same query + depth → zero LLM calls, return cached .brief
+4. New query or new depth → one LLM call, repeat rule 2
 """
 
 from __future__ import annotations
@@ -14,7 +19,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .extractors import detect_type
-from .renderer import render_brief, render_overview_file, render_query_file
+from .renderer import render_query_file
 from .store import BriefStore
 from .summarizer import summarize
 
@@ -31,13 +36,12 @@ def _validate_url(uri: str) -> str | None:
     """Check if a URL is reachable before attempting extraction.
 
     Returns None if the URL is valid, or an error string explaining the problem.
-    Skips validation for video platforms (handled by yt-dlp internally).
     """
     from urllib.parse import urlparse
     parsed = urlparse(uri)
     host = parsed.hostname or ""
 
-    # Skip validation for video platforms and Reddit — they have their own extraction
+    # Skip validation for platforms with dedicated extractors
     if any(vh in host for vh in _VIDEO_SCHEMES):
         return None
     if any(rh in host for rh in _REDDIT_HOSTS):
@@ -66,163 +70,32 @@ def _validate_url(uri: str) -> str | None:
     return None
 
 
-
-def _content_hash(text: str) -> str:
-    return f"sha256:{hashlib.sha256(text.encode('utf-8')).hexdigest()}"
-
-
-def _estimate_tokens(text: str) -> int:
-    return max(1, len(text) // 4)
-
-
-def _format_timestamp(sec: float) -> str:
-    """Convert seconds to human-readable timestamp like '1:25' or '1:02:15'."""
-    total = int(sec)
-    hours = total // 3600
-    minutes = (total % 3600) // 60
-    seconds = total % 60
-    if hours > 0:
-        return f"{hours}:{minutes:02d}:{seconds:02d}"
-    return f"{minutes}:{seconds:02d}"
-
-
-def _build_brief(
+def _build_source_data(
     source_type: str,
     uri: str,
     chunks: list[dict[str, Any]],
-    summary: str,
-    key_points: list[str],
 ) -> dict[str, Any]:
-    """Assemble a .brief v2 dict from extracted data."""
-    full_text = " ".join(c.get("text", "") for c in chunks)
-
-    pointers = []
-    raw_chunks = []
-    for chunk in chunks:
-        start = chunk.get("start_sec", 0.0)
-        text = chunk.get("text", "").strip()
-        if text:
-            pointer_text = text[:150].rsplit(" ", 1)[0] + "..." if len(text) > 150 else text
-            p = {
-                "sec": round(start, 2),
-                "text": pointer_text,
-            }
-            if source_type == "video":
-                p["at"] = _format_timestamp(start)
-            pointers.append(p)
-
-            raw = {"sec": round(start, 2), "text": text}
-            if source_type == "video":
-                raw["at"] = _format_timestamp(start)
-            raw_chunks.append(raw)
-
-    import json
-    brief = {
-        "v": 2,
+    """Build clean source data — raw extraction only, no LLM output."""
+    return {
         "source": {
             "type": source_type,
             "uri": uri,
-            "tokens_original": _estimate_tokens(full_text),
-            "hash": _content_hash(full_text),
         },
-        "summary": summary,
-        "key_points": key_points,
-        "pointers": pointers,
-        "chunks": raw_chunks,
-        "tokens": 0,
+        "chunks": [
+            {"text": c.get("text", "").strip(), "start_sec": c.get("start_sec", 0.0)}
+            for c in chunks
+            if c.get("text", "").strip()
+        ],
         "created": datetime.now(timezone.utc).isoformat(),
     }
-    brief["tokens"] = _estimate_tokens(json.dumps(brief))
-    return brief
 
 
-def _trim_chunks(chunks: list[dict[str, Any]], max_words: int = 1200) -> list[dict[str, Any]]:
-    """Trim chunks to a word budget for re-summarization."""
-    trimmed = []
-    word_count = 0
-    for c in chunks:
-        text = c.get("text", "")
-        word_count += len(text.split())
-        trimmed.append(c)
-        if word_count >= max_words:
-            break
-    return trimmed
-
-
-def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
-    """Main entry point: get a rendered brief for a URI.
-
-    Flow:
-    1. Check if this specific query was already answered → return cached .brief
-    2. Check if source data exists → re-summarize with LLM for new query
-    3. If no source data: extract → summarize → save source + overview + query brief
-    4. Render and return
-
-    Args:
-        uri: Content URI (video URL, page URL, etc.)
-        query: The consuming agent's current task/question
-        force: Skip cache and re-extract
-        depth: Detail level (0=headline, 1=summary, 2=detailed, 3=full)
-
-    Returns:
-        Plain text brief for agent consumption
-    """
-    is_real_query = query and query != "summarize this content"
-    slug = _store._slugify(uri)
-
-    if not force:
-        # ── Check 1: Was this exact query already answered?
-        if is_real_query and depth in (1, 2):
-            cached_query = _store.check_query(uri, query)
-            if cached_query:
-                logger.info("Query cache hit: %s / %s", slug, query)
-                return f"brief found → .briefs/{slug}/\n\n{cached_query}"
-
-        # ── Check 2: Do we have source data (extraction cache)?
-        cached_source = _store.check_source(uri)
-        if cached_source:
-            logger.info("Source cache hit for %s", uri)
-
-            if is_real_query and depth > 0:
-                # Re-summarize with the LLM for this new query
-                chunks = cached_source.get("chunks", cached_source.get("pointers", []))
-                source_type = cached_source.get("source", {}).get("type", "webpage")
-                created = cached_source.get("created", "")
-
-                if chunks:
-                    trimmed = _trim_chunks(chunks)
-                    try:
-                        print("⟳ Summarizing for new query...", file=sys.stderr, flush=True)
-                        new_summary, new_key_points = summarize(trimmed, query=query)
-                        if new_summary:
-                            # Save per-query .brief file
-                            brief_text = render_query_file(
-                                uri=uri, query=query, summary=new_summary,
-                                key_points=new_key_points, source_type=source_type,
-                                created=created,
-                            )
-                            _store.save_query(uri, query, brief_text, summary=new_summary)
-
-                            # Also render for agent response
-                            updated = {**cached_source, "summary": new_summary,
-                                        "key_points": new_key_points}
-                            rendered = render_brief(updated, query=query, depth=depth)
-                            return f"brief created → .briefs/{slug}/\n\n{rendered}"
-                    except Exception as exc:
-                        logger.debug("Re-summarization failed: %s", exc)
-
-            # Fall back to rendering from cached source
-            rendered = render_brief(cached_source, query=query, depth=depth)
-            return f"brief found → .briefs/{slug}/\n\n{rendered}"
-
-    # ── Fresh extraction ──────────────────────────────────────────
-
-    # Validate URL before attempting extraction
+def _extract(uri: str) -> tuple[str, list[dict[str, Any]]] | None:
+    """Extract content from a URI. Returns (content_type, chunks) or None."""
     url_error = _validate_url(uri)
     if url_error:
-        return url_error
+        return None
 
-    # Detect type and extract
     content_type = detect_type(uri)
     print(f"⟳ Extracting {content_type} content...", file=sys.stderr, flush=True)
 
@@ -243,51 +116,107 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
         from .extractors.pdf import extract as extract_pdf
         chunks = extract_pdf(uri)
     else:
-        logger.warning("No extractor available for type '%s' yet.", content_type)
-        return f"no extractor available for {content_type} yet"
+        return None
+
+    if not chunks:
+        return None
+
+    return content_type, chunks
+
+
+def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
+    """Main entry point: get a rendered brief for a URI.
+
+    Flow:
+    1. Check if this (query, depth) was already answered → return cached .brief
+    2. Check if source data exists → summarize with LLM for this (query, depth)
+    3. If no source data: extract → save source → summarize → save .brief
+    4. Return rendered brief
+
+    Args:
+        uri: Content URI (video URL, page URL, etc.)
+        query: The consuming agent's current task/question
+        force: Skip cache and re-extract
+        depth: Detail level (0=headline, 1=summary, 2=detailed)
+
+    Returns:
+        Plain text brief for agent consumption
+    """
+    # Clamp depth to 0-2
+    depth = max(0, min(2, depth))
+
+    slug = _store._slugify(uri)
+
+    if not force:
+        # ── Rule 3: Same query + depth → return cached .brief ──
+        if depth > 0:
+            cached = _store.check_query(uri, query, depth)
+            if cached:
+                logger.info("Cache hit: %s / %s (depth=%d)", slug, query, depth)
+                return f"brief found → .briefs/{slug}/\n\n{cached}"
+
+        # depth=0 never saves, but check if source exists to avoid re-extraction
+        # (we still need an LLM call for depth=0 since it's not cached)
+
+    # ── Get chunks: from source cache or fresh extraction ──
+
+    cached_source = _store.check_source(uri) if not force else None
+    if cached_source:
+        chunks = cached_source.get("chunks", [])
+        content_type = cached_source.get("source", {}).get("type", "webpage")
+        created = cached_source.get("created", "")
+    else:
+        result = _extract(uri)
+        if result is None:
+            url_error = _validate_url(uri)
+            if url_error:
+                return url_error
+            return f"could not extract content from {uri}"
+
+        content_type, raw_chunks = result
+        source_data = _build_source_data(content_type, uri, raw_chunks)
+        _store.save_source(source_data)
+        chunks = source_data["chunks"]
+        created = source_data["created"]
 
     if not chunks:
         return f"could not extract content from {uri}"
 
-    # Summarize
+    # ── Rule 2 & 4: Summarize with LLM ──
+
     print("⟳ Summarizing with LLM...", file=sys.stderr, flush=True)
-    summary, key_points = summarize(chunks, query=query)
+    summary, key_points = summarize(chunks, query=query, depth=depth)
 
-    # Build brief data
-    brief_data = _build_brief(
-        source_type=content_type,
-        uri=uri,
-        chunks=chunks,
-        summary=summary,
-        key_points=key_points,
-    )
+    # ── Save .brief file (depth 1-2 only, depth 0 is triage) ──
 
-    # Save source data + overview brief
-    overview_text = render_overview_file(brief_data)
-    _store.save_source(brief_data, overview_text)
-
-    # Save per-query brief (if depth > 0 and real query)
-    if is_real_query and depth > 0:
-        query_text = render_query_file(
+    if depth > 0 and summary:
+        brief_text = render_query_file(
             uri=uri, query=query, summary=summary,
             key_points=key_points, source_type=content_type,
-            created=brief_data.get("created", ""),
+            created=created,
         )
-        _store.save_query(uri, query, query_text, summary=summary)
+        _store.save_query(
+            uri, query, depth, brief_text,
+            summary=summary, key_points=key_points,
+        )
+        return f"brief created → .briefs/{slug}/\n\n{brief_text}"
 
-    # Render for agent response
-    rendered = render_brief(brief_data, query=query, depth=depth)
-    return f"brief created → .briefs/{slug}/\n\n{rendered}"
+    # depth=0: return headline directly, no file saved
+    if summary:
+        label = f"[{content_type.upper()}: {uri}]"
+        return f"{label}\n{summary}"
+
+    return f"could not summarize content from {uri}"
 
 
 def get_brief_data(uri: str) -> dict[str, Any] | None:
-    """Get the raw stored brief JSON (for tooling/debugging)."""
+    """Get the raw stored source JSON (for tooling/debugging)."""
     return _store.check_source(uri)
 
 
 def check_existing(uri: str) -> str:
     """Check what briefs exist for a URI. Returns a human-readable summary."""
-    queries = _store.list_queries(uri)
+    queries = _store.check_existing(uri)
     if not queries:
         return f"No briefs exist for {uri}. Call brief_content to create one."
 
@@ -295,8 +224,9 @@ def check_existing(uri: str) -> str:
     lines = [f"Briefs for {uri} (.briefs/{slug}/):", ""]
     for q in queries:
         label = q["query"]
+        depth_label = f"depth={q['depth']}" if q.get("depth") else ""
         preview = q["summary"][:80] + "..." if len(q["summary"]) > 80 else q["summary"]
-        lines.append(f"  • {label}: {q['filename']}")
+        lines.append(f"  • {label} ({depth_label}): {q['filename']}")
         if preview:
             lines.append(f"    {preview}")
     lines.append("")
@@ -317,4 +247,4 @@ def compare(
         content = "\n".join(lines[2:]) if lines[0].startswith("brief") else result
         parts.append(f"--- source {i} ---\n{content.strip()}")
 
-    return "\n\n".join(parts)
+    return "\n".join(parts)

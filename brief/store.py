@@ -3,13 +3,12 @@
 Storage layout:
   .briefs/
   ├── {slug}/                         ← subdirectory per URL
-  │   ├── _source.json                ← raw extraction data (chunks, metadata)
-  │   ├── overview.brief              ← generic summary (no query)
-  │   ├── async-support.brief         ← query-specific brief
-  │   └── how-to-deploy.brief         ← query-specific brief
+  │   ├── _source.json                ← raw extraction data (chunks only)
+  │   ├── async-support.brief         ← depth=1 query brief
+  │   └── async-support-deep.brief    ← depth=2 query brief
   └── _index.sqlite3                  ← lookup index
 
-Each query produces a separate .brief file.
+Each (query, depth) produces a separate .brief file.
 Agents can browse the folder, grep across files, or use SQLite for lookups.
 """
 
@@ -43,7 +42,6 @@ class BriefStore:
 
     def _ensure_schema(self) -> None:
         with self._connect() as conn:
-            # Drop old schema if it exists (migration from flat files)
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS briefs (
@@ -51,15 +49,25 @@ class BriefStore:
                     uri TEXT NOT NULL,
                     uri_hash TEXT NOT NULL,
                     query TEXT,
+                    depth INTEGER DEFAULT 1,
                     slug TEXT NOT NULL,
                     filename TEXT NOT NULL,
                     summary TEXT,
+                    key_points TEXT,
                     created TEXT NOT NULL,
-                    UNIQUE(uri_hash, query)
+                    UNIQUE(uri_hash, query, depth)
                 )
                 """
             )
-            # Keep old table for backwards compatibility during migration
+            # Migration: add depth and key_points columns if missing
+            try:
+                conn.execute("SELECT depth FROM briefs LIMIT 1")
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE briefs ADD COLUMN depth INTEGER DEFAULT 1")
+            try:
+                conn.execute("SELECT key_points FROM briefs LIMIT 1")
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE briefs ADD COLUMN key_points TEXT")
             conn.commit()
 
     @staticmethod
@@ -80,13 +88,17 @@ class BriefStore:
         return slug[:60]
 
     @staticmethod
-    def _query_slug(query: str) -> str:
-        """Create a filename-safe slug from a query string."""
+    def _query_slug(query: str, depth: int = 1) -> str:
+        """Create a filename-safe slug from a query string + depth."""
         if not query or query == "summarize this content":
-            return "overview"
-        slug = re.sub(r"[^a-z0-9 ]", "", query.lower())
-        slug = "-".join(slug.split()[:5])  # max 5 words
-        return slug[:40] or "query"
+            base = "summary"
+        else:
+            base = re.sub(r"[^a-z0-9 ]", "", query.lower())
+            base = "-".join(base.split()[:5])  # max 5 words
+            base = base[:40] or "query"
+        if depth == 2:
+            base += "-deep"
+        return base
 
     def _url_dir(self, uri: str) -> Path:
         """Get or create the subdirectory for a URL."""
@@ -95,10 +107,10 @@ class BriefStore:
         url_dir.mkdir(parents=True, exist_ok=True)
         return url_dir
 
-    # ── Source data (raw extraction) ───────────────────────────────
+    # ── Source data (raw extraction only) ─────────────────────────
 
     def check_source(self, uri: str) -> dict[str, Any] | None:
-        """Look up cached source data by URI. Returns brief dict or None."""
+        """Look up cached raw extraction data by URI. Returns dict or None."""
         url_dir = self.briefs_dir / self._slugify(uri)
         source_path = url_dir / "_source.json"
         if not source_path.exists():
@@ -111,9 +123,9 @@ class BriefStore:
         except (json.JSONDecodeError, OSError):
             return None
 
-    def save_source(self, brief_data: dict[str, Any], overview_text: str = "") -> Path:
-        """Save raw extraction data as _source.json + overview.brief."""
-        uri = brief_data.get("source", {}).get("uri", "")
+    def save_source(self, source_data: dict[str, Any]) -> Path:
+        """Save raw extraction data as _source.json. No LLM output."""
+        uri = source_data.get("source", {}).get("uri", "")
         if not uri:
             logger.warning("Cannot save source: no URI.")
             return self.briefs_dir
@@ -121,28 +133,20 @@ class BriefStore:
         url_dir = self._url_dir(uri)
         source_path = url_dir / "_source.json"
 
-        # Write structured JSON
         source_path.write_text(
-            json.dumps(brief_data, indent=2, ensure_ascii=False),
+            json.dumps(source_data, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
-
-        # Write overview brief (generic, no query)
-        if overview_text:
-            overview_path = url_dir / "overview.brief"
-            overview_path.write_text(overview_text, encoding="utf-8")
-            self._index_brief(uri, None, "overview.brief", overview_text[:200],
-                              brief_data.get("created", ""))
 
         logger.info("Saved source: %s/_source.json", url_dir.name)
         return source_path
 
     # ── Per-query briefs ──────────────────────────────────────────
 
-    def check_query(self, uri: str, query: str) -> str | None:
-        """Check if a specific query has been answered. Returns brief text or None."""
+    def check_query(self, uri: str, query: str, depth: int = 1) -> str | None:
+        """Check if a specific (query, depth) has been answered. Returns brief text or None."""
         url_dir = self.briefs_dir / self._slugify(uri)
-        query_filename = self._query_slug(query) + ".brief"
+        query_filename = self._query_slug(query, depth) + ".brief"
         query_path = url_dir / query_filename
 
         if not query_path.exists():
@@ -155,15 +159,19 @@ class BriefStore:
         except OSError:
             return None
 
-    def save_query(self, uri: str, query: str, brief_text: str,
-                   summary: str = "") -> Path:
+    def save_query(self, uri: str, query: str, depth: int, brief_text: str,
+                   summary: str = "", key_points: list[str] | None = None) -> Path:
         """Save a query-specific .brief file and update the index."""
         url_dir = self._url_dir(uri)
-        query_filename = self._query_slug(query) + ".brief"
+        query_filename = self._query_slug(query, depth) + ".brief"
         query_path = url_dir / query_filename
 
         query_path.write_text(brief_text, encoding="utf-8")
-        self._index_brief(uri, query, query_filename, summary[:200])
+        self._index_brief(
+            uri, query, depth, query_filename,
+            summary=summary,
+            key_points=key_points,
+        )
 
         # Update trail in all sibling briefs
         self._update_trails(url_dir)
@@ -197,30 +205,33 @@ class BriefStore:
 
     # ── Index operations ──────────────────────────────────────────
 
-    def _index_brief(self, uri: str, query: str | None, filename: str,
-                     summary: str = "", created: str = "") -> None:
+    def _index_brief(self, uri: str, query: str | None, depth: int,
+                     filename: str, summary: str = "",
+                     key_points: list[str] | None = None,
+                     created: str = "") -> None:
         """Add or update a brief in the SQLite index."""
         key = self._uri_hash(uri)
         slug = self._slugify(uri)
+        kp_json = json.dumps(key_points or [])
         with self._connect() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO briefs
-                   (uri, uri_hash, query, slug, filename, summary, created)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (uri, key, query, slug, filename, summary, created),
+                   (uri, uri_hash, query, depth, slug, filename, summary, key_points, created)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (uri, key, query, depth, slug, filename, summary, kp_json, created),
             )
             conn.commit()
 
-    def list_queries(self, uri: str) -> list[dict[str, str]]:
-        """List all queries answered for a URI."""
+    def check_existing(self, uri: str) -> list[dict[str, Any]]:
+        """List all queries answered for a URI (for check_existing_brief MCP tool)."""
         key = self._uri_hash(uri)
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT query, filename, summary FROM briefs WHERE uri_hash = ? ORDER BY created",
+                "SELECT query, depth, filename, summary FROM briefs WHERE uri_hash = ? ORDER BY created",
                 (key,),
             ).fetchall()
         return [
-            {"query": r[0] or "overview", "filename": r[1], "summary": r[2] or ""}
+            {"query": r[0] or "summary", "depth": r[1], "filename": r[2], "summary": r[3] or ""}
             for r in rows
         ]
 
@@ -228,7 +239,6 @@ class BriefStore:
         """List all briefs grouped by URL."""
         results: dict[str, dict[str, Any]] = {}
 
-        # Scan subdirectories
         for subdir in sorted(self.briefs_dir.iterdir()):
             if not subdir.is_dir() or subdir.name.startswith("_"):
                 continue
@@ -249,7 +259,6 @@ class BriefStore:
             for bf in brief_files:
                 try:
                     content = bf.read_text(encoding="utf-8")
-                    # Extract first non-divider line as a summary preview
                     for line in content.split("\n"):
                         line = line.strip()
                         if line and not line.startswith(("═", "─", "→", "▸")):
@@ -279,4 +288,4 @@ class BriefStore:
 
     def save(self, brief: dict[str, Any], rendered_text: str = "") -> Path:
         """Legacy method — saves source data."""
-        return self.save_source(brief, rendered_text)
+        return self.save_source(brief)
