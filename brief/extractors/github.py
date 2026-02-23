@@ -43,7 +43,26 @@ def _parse_github_url(uri: str) -> tuple[str, str] | None:
 
 
 def extract(uri: str) -> list[dict[str, Any]]:
-    """Extract repo content from a GitHub URL."""
+    """Extract repo content from a GitHub URL.
+
+    For repo-level URLs: uses GitHub API (metadata, README, tree, issues).
+    For sub-page URLs (discussions, specific issues, PRs, wiki): falls back
+    to webpage extraction since the GitHub API can't fetch those.
+    """
+    from urllib.parse import urlparse
+
+    parsed = urlparse(uri)
+    path_parts = [p for p in parsed.path.strip("/").split("/") if p]
+
+    # Sub-page URLs the GitHub API can't handle — fall back to webpage
+    # e.g. /owner/repo/discussions/1944, /owner/repo/issues/123, /owner/repo/pull/456
+    if len(path_parts) > 2:
+        sub = path_parts[2].lower()
+        if sub in ("discussions", "issues", "pull", "wiki", "actions", "security", "releases"):
+            logger.info("GitHub sub-page detected (%s), falling back to webpage extractor", sub)
+            from .webpage import extract as extract_webpage
+            return extract_webpage(uri)
+
     try:
         import httpx
     except ImportError:

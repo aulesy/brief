@@ -2,6 +2,7 @@
 
 Usage:
     brief --uri "https://youtube.com/watch?v=abc" --query "how to install"
+    brief --batch "https://url1.com" "https://url2.com" --query "compare" --depth 0
     brief --list
 """
 
@@ -18,6 +19,7 @@ app = typer.Typer(add_completion=False, pretty_exceptions_enable=False)
 @app.command()
 def main(
     uri: str = typer.Option(None, help="Content URI to brief (video URL, page URL, etc.)"),
+    batch: list[str] = typer.Option(None, help="Multiple URIs to brief in parallel"),
     query: str = typer.Option("summarize this content", help="What the consuming agent wants to know"),
     depth: int = typer.Option(1, "--depth", min=0, max=2, help="Detail level: 0=headline, 1=summary, 2=deep dive"),
     list_briefs: bool = typer.Option(False, "--list", help="List all existing briefs"),
@@ -45,8 +47,25 @@ def main(
             typer.echo()
         raise typer.Exit()
 
+    # ── Batch mode ────────────────────────────────────────────────
+    if batch:
+        from brief import brief_batch
+
+        typer.echo(f"Briefing {len(batch)} URLs at depth={depth}...\n", err=True)
+        results = brief_batch(batch, query=query, depth=depth)
+        for i, (url, result) in enumerate(zip(batch, results), 1):
+            typer.echo(f"{'─' * 50}")
+            typer.echo(f"[{i}/{len(batch)}] {url}")
+            typer.echo(f"{'─' * 50}")
+            typer.echo(result)
+            typer.echo()
+        raise typer.Exit()
+
+    # ── Single URI mode ───────────────────────────────────────────
     if not uri:
-        typer.echo("Error: --uri is required. Example: brief --uri 'https://youtube.com/watch?v=abc' --query 'how to install'")
+        typer.echo("Error: --uri or --batch is required.\n"
+                   "  brief --uri 'https://example.com' --query 'key takeaways'\n"
+                   "  brief --batch 'https://url1.com' --batch 'https://url2.com' --depth 0")
         raise typer.Exit(1)
 
     from .service import brief, get_brief_data

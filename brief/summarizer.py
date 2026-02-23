@@ -197,11 +197,18 @@ def _llm_summary(
             key_points = parsed.get("key_points", [])
             if isinstance(summary, str) and summary:
                 logger.info("LLM summary generated (%d chars, depth=%d)", len(summary), depth)
-                # Depth 0: tight headline. Depth 1: concise. Depth 2: no truncation.
                 max_summary = {0: 160, 1: 500, 2: 2000}.get(depth, 500)
                 max_kp = {0: 0, 1: 120, 2: 300}.get(depth, 120)
                 truncated_kp = [_truncate(str(kp), max_kp) for kp in key_points[:8]] if max_kp else []
                 return _truncate(summary, max_summary), truncated_kp
+
+        # LLM returned something but it wasn't valid JSON — use raw text as summary
+        if raw and len(raw) > 20:
+            import sys
+            print(f"⚠ LLM returned plain text instead of JSON, using as-is", file=sys.stderr, flush=True)
+            logger.warning("LLM response was not JSON (%d chars), using raw text", len(raw))
+            max_summary = {0: 160, 1: 500, 2: 2000}.get(depth, 500)
+            return _truncate(raw, max_summary), []
 
     except Exception as exc:
         logger.warning("LLM summary failed (%s): %s", model, exc)
