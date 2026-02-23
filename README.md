@@ -130,43 +130,22 @@ uvicorn brief.api:app --port 8080
 
 ## The `.briefs/` folder
 
-Every brief is saved locally as soon as it's extracted:
+Every URL gets its own subdirectory. Each query adds a new `.brief` file:
 
 ```
 .briefs/
-├── fastapi-tiangolo-com.brief       ← human-readable text
-├── fastapi-tiangolo-com.brief.json  ← structured data
-└── _index.sqlite3                   ← URI lookups
+├── fastapi-tiangolo-com/
+│   ├── _source.json              ← raw extraction data
+│   ├── overview.brief            ← generic summary
+│   ├── async-support.brief       ← Agent A's question
+│   └── how-to-deploy.brief       ← Agent B's question
+└── _index.sqlite3                ← fast lookups
 ```
 
-This makes `.briefs/` a natural memory layer for your whole pipeline. If one agent briefs a URL, any other agent can reuse it instantly — no re-fetching needed. The more your system runs, the more it already knows.
+One agent researches, another reasons, another writes — nothing gets fetched or summarized twice. Each `.brief` file includes a TRAIL section listing sibling briefs, so any agent can see what else has been researched.
 
-`.brief` files use a clean, structured format designed for human readability:
+Agents with MCP tools call `brief_content()`. Agents with file access can read `.briefs/` directly, or `grep` across files. No special tools required — just plain text.
 
-```
-═══ BRIEF ════════════════════════════════════════
-FastAPI
-https://fastapi.tiangolo.com/
-Type: WEBPAGE | Extracted: 2026-02-22
-
-─── SUMMARY ────────────────────────────────────
-FastAPI is a modern, high-performance Python web framework...
-
-─── KEY POINTS ──────────────────────────────
-• Speed comparable to NodeJS and Go
-• Built on Python type hints and Pydantic
-• Automatic OpenAPI documentation
-
-─── SECTIONS ──────────────────────────────────────
-▸ FastAPI framework, high performance, easy to learn
-▸ Fast to code: 200-300% speed increase
-▸ Fewer bugs: 40% reduction in developer errors
-
-─── LINKS ────────────────────────────────────────
-→ Docs: https://fastapi.tiangolo.com
-→ Typer: https://typer.tiangolo.com/
-→ Uvicorn: https://www.uvicorn.dev
-```
 
 ## Configuration
 
