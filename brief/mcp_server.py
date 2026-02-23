@@ -58,19 +58,15 @@ def check_existing_brief(uri: str) -> str:
     """Check if a brief already exists for this URI.
 
     Call this BEFORE brief_content() to avoid redundant work.
-    Returns the cached brief if found, or a message saying none exists.
+    Returns a list of queries already answered for this URL,
+    or a message saying none exists.
 
     Args:
         uri: URL to check
     """
-    from .store import BriefStore
-    from .renderer import render_brief
+    from .service import check_existing
 
-    store = BriefStore()
-    data = store.check(uri)
-    if data:
-        return f"brief found\n\n{render_brief(data)}"
-    return "no brief for this URI"
+    return check_existing(uri)
 
 
 @mcp.tool()
@@ -83,14 +79,21 @@ def list_briefs() -> str:
     from .store import BriefStore
 
     store = BriefStore()
-    briefs = store.list_all()
-    if not briefs:
+    groups = store.list_all()
+    if not groups:
         return "no briefs yet"
 
-    lines = [f"{len(briefs)} brief(s) available\n"]
-    for b in briefs:
-        lines.append(f"  [{b['type'].upper()}] {b['uri']}")
-        lines.append(f"    {b['summary']}\n")
+    lines = []
+    for g in groups:
+        uri = g.get("uri", "")
+        slug = g.get("slug", "")
+        briefs = g.get("briefs", [])
+        lines.append(f".briefs/{slug}/ ({len(briefs)} brief{'s' if len(briefs) != 1 else ''})")
+        if uri:
+            lines.append(f"  {uri}")
+        for b in briefs:
+            lines.append(f"  • {b['file']}: {b.get('preview', '')[:80]}")
+        lines.append("")
     return "\n".join(lines)
 
 

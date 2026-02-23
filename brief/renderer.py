@@ -181,14 +181,8 @@ def _truncate_line(text: str, max_len: int = 120) -> str:
     return text[:max_len].rsplit(" ", 1)[0].rstrip(".,;:!?") + "..."
 
 
-def render_brief_file(brief: dict[str, Any]) -> str:
-    """Render a brief in the custom .brief file format.
-
-    This produces a stable, query-independent, human-readable file
-    with structured sections and distinctive formatting.
-    Unlike render_brief(), this is NOT query-aware — it's the
-    canonical reference card for the URL.
-    """
+def render_overview_file(brief: dict[str, Any]) -> str:
+    """Render the overview.brief file — a generic, query-independent card."""
     source = brief.get("source", {})
     source_type = source.get("type", "content").upper()
     uri = source.get("uri", "unknown")
@@ -200,8 +194,6 @@ def render_brief_file(brief: dict[str, Any]) -> str:
 
     lines: list[str] = []
 
-    # ── Header ──
-    # Extract a title from the first pointer or summary
     title = ""
     if pointers:
         first_text = pointers[0].get("text", "")
@@ -217,13 +209,11 @@ def render_brief_file(brief: dict[str, Any]) -> str:
         meta += f" | Extracted: {created[:10]}"
     lines.append(meta)
 
-    # ── Summary ──
     if summary:
         lines.append("")
         lines.append("─── SUMMARY " + "─" * max(1, 48 - len("─── SUMMARY ")))
         lines.append(summary)
 
-    # ── Key Points ──
     if key_points:
         lines.append("")
         lines.append("─── KEY POINTS " + "─" * max(1, 45 - len("─── KEY POINTS ")))
@@ -231,8 +221,6 @@ def render_brief_file(brief: dict[str, Any]) -> str:
             clean = _strip_links(kp)
             lines.append(f"• {_truncate_line(clean)}")
 
-    # ── Sections ──
-    # Use pointers for a high-level scan, skip code-like content
     prose_pointers = [p for p in pointers if not _is_code_like(p.get("text", ""))]
     if prose_pointers:
         lines.append("")
@@ -247,18 +235,58 @@ def render_brief_file(brief: dict[str, Any]) -> str:
             else:
                 lines.append(f"▸ {text}")
 
-    # ── Links ──
-    # Collect links from all chunks and pointers
     all_text = " ".join(c.get("text", "") for c in (chunks or pointers))
     links = _extract_links(all_text)
     if links:
         lines.append("")
         lines.append("─── LINKS " + "─" * max(1, 50 - len("─── LINKS ")))
         for label, url in links[:15]:
-            # Don't show links where the label IS the url
             if label.startswith("http"):
                 lines.append(f"→ {url}")
             else:
                 lines.append(f"→ {label}: {url}")
 
     return "\n".join(lines)
+
+
+def render_query_file(
+    uri: str,
+    query: str,
+    summary: str,
+    key_points: list[str],
+    source_type: str = "WEBPAGE",
+    created: str = "",
+) -> str:
+    """Render a per-query .brief file — focused answer to a specific question."""
+    lines: list[str] = []
+
+    title = summary.split(".")[0].strip()[:80] if summary else "No summary"
+    lines.append("═══ BRIEF " + "═" * max(1, 50 - len("═══ BRIEF ")))
+    lines.append(title)
+    lines.append(uri)
+    query_clean = _strip_links(query)[:60]
+    meta = f"Query: \"{query_clean}\" | Type: {source_type.upper()}"
+    if created:
+        meta += f" | {created[:10]}"
+    lines.append(meta)
+
+    if summary:
+        lines.append("")
+        lines.append("─── ANSWER " + "─" * max(1, 49 - len("─── ANSWER ")))
+        lines.append(summary)
+
+    if key_points:
+        lines.append("")
+        lines.append("─── KEY POINTS " + "─" * max(1, 45 - len("─── KEY POINTS ")))
+        for kp in key_points[:5]:
+            clean = _strip_links(kp)
+            lines.append(f"• {_truncate_line(clean)}")
+
+    # TRAIL section is added by store._update_trails() after saving
+
+    return "\n".join(lines)
+
+
+# Backwards compatibility
+render_brief_file = render_overview_file
+
