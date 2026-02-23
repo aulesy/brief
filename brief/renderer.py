@@ -260,9 +260,8 @@ def render_query_file(
     """Render a per-query .brief file — focused answer to a specific question."""
     lines: list[str] = []
 
-    title = summary.split(".")[0].strip()[:80] if summary else "No summary"
     lines.append("═══ BRIEF " + "═" * max(1, 50 - len("═══ BRIEF ")))
-    lines.append(title)
+    lines.append(_strip_links(query)[:80])
     lines.append(uri)
     query_clean = _strip_links(query)[:60]
     meta = f"Query: \"{query_clean}\" | Type: {source_type.upper()}"

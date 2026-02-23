@@ -177,14 +177,16 @@ class BriefStore:
         if len(brief_files) < 2:
             return
 
-        trail_lines = ["\n─── TRAIL " + "─" * 40]
-        for f in brief_files:
-            trail_lines.append(f"→ {f.name}")
-        trail_lines.append(f"→ _source.json")
-        trail_block = "\n".join(trail_lines)
-
         for bf in brief_files:
             try:
+                # Build trail excluding self
+                trail_lines = ["\n─── TRAIL " + "─" * 40]
+                for sibling in brief_files:
+                    if sibling.name != bf.name:
+                        trail_lines.append(f"→ {sibling.name}")
+                trail_lines.append("→ _source.json")
+                trail_block = "\n".join(trail_lines)
+
                 content = bf.read_text(encoding="utf-8")
                 # Remove existing trail section
                 content = re.sub(r"\n─── TRAIL ─.*", "", content, flags=re.DOTALL)
