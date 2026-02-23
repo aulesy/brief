@@ -38,7 +38,7 @@ def _parse_github_url(uri: str) -> tuple[str, str] | None:
     if not m:
         return None
     owner = m.group(1)
-    repo = m.group(2).rstrip(".git")
+    repo = m.group(2).removesuffix(".git")
     return owner, repo
 
 
