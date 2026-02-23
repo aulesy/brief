@@ -172,7 +172,7 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
 
     if not force:
         # ── Check 1: Was this exact query already answered?
-        if is_real_query:
+        if is_real_query and depth in (1, 2):
             cached_query = _store.check_query(uri, query)
             if cached_query:
                 logger.info("Query cache hit: %s / %s", slug, query)
