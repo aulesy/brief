@@ -54,8 +54,8 @@ _PROMPTS = {
     2: {
         "system": (
             "You are a research analyst. Provide a detailed, thorough analysis. "
-            "Include specifics: code examples, exact numbers, configuration details, "
-            "gotchas, trade-offs, and anything a developer would need to actually build with this. "
+            "Include specifics: exact numbers, evidence, nuances, trade-offs, "
+            "and anything someone would need to fully understand this topic. "
             "Respond with JSON: {\"summary\": \"detailed analysis, 5-10 sentences\", "
             "\"key_points\": [\"specific point with details\", ...]}"
         ),

@@ -4,43 +4,52 @@
 
 # Brief
 
-Reading the web is expensive, in tokens, in time, in redundant work. Brief gives agents a shared layer for extracting and understanding content: webpages, videos, and PDFs get pulled once, summarized around the task at hand, and cached so any agent in your pipeline can reuse them instantly. Start with a headline, go deep only where it matters, and let the briefs accumulate as your system works.
+Agents shouldn't have to read to research. They should be able to ask.
 
-Without Brief, your agent fetches a page, chunks it, summarizes it, and then finally gets to the actual question, burning tokens at every step. Brief collapses that into a single call that returns exactly as much as the agent needs, already shaped around the task.
+Your agent walks up to each source and asks: *do you have what I'm looking for? Can you give me only what I need?* The source answers with exactly that, a headline if you're skimming, a summary if you're curious, a deep dive if you need the full picture.
+
+Brief extracts content once across webpages, videos, PDFs, Reddit, and GitHub. Every question gets a focused answer, shaped by the query, cached so your agents never repeat work, and saved so your whole pipeline can build on it.
+
+> Instead of thinking "I need to read this article," your agent can think "I need to understand this concept across multiple sources." Brief handles the reading. The agent handles the connecting.
+
+## What Brief feels like
+
+Most agents read the web like a student the night before an exam: grab everything, highlight randomly, hope something sticks. Every page gets read cover to cover, tokens burning whether the content matters or not.
+
+Brief works differently. Your agent doesn't read sources, it interviews them. Ask a question, get an answer. Move on. And because every answer is saved, a team of agents can share the work without any of them repeating it. The more your system runs, the more it already knows.
 
 ```python
 from brief import brief
 
-# ~30 tokens - enough to know if this page is worth reading
-brief("https://fastapi.tiangolo.com/", "what is fastapi", depth=0)
+# One sentence — is this page even relevant?
+brief("https://fastapi.tiangolo.com/", "async support", depth=0)
 
-# ~100 tokens - key points and top sections
-brief("https://fastapi.tiangolo.com/", "what is fastapi", depth=1)
+# Summary + key points — what do I need to know?
+brief("https://fastapi.tiangolo.com/", "async support", depth=1)
 
-# ~700 tokens - full structured summary, re-ranked around your query
+# Deep dive — give me specifics, examples, gotchas
 brief("https://fastapi.tiangolo.com/", "async support", depth=2)
 ```
 
 ## Depth levels
 
-The agent controls how much it reads:
-
 ```
-depth=0   headline     ~30 tokens     quick triage - is this page worth reading?
-depth=1   summary      ~100 tokens    summary + key points + top sections
-depth=2   detailed     ~500 tokens    all sections, re-ranked by query
-depth=3   full         all content    complete extracted text
+depth=0   headline    one sentence — is this worth reading?
+depth=1   summary     2-3 sentences + key points (default)
+depth=2   deep dive   detailed analysis with specifics, examples, trade-offs
 ```
 
-Every depth level reads from the same cached extraction. No re-fetching. When a new query is asked, Brief re-summarizes the cached content with the LLM, fast, because the expensive extraction is already done.
+Each (query, depth) combination is cached as a separate `.brief` file. Ask the same question twice, instant. Ask a new question, one LLM call, reuses the cached extraction.
 
-## Works across content types
+## Content types
 
-Brief handles webpages, videos, and PDFs with the same interface:
+Brief handles webpages, videos, PDFs, Reddit, and GitHub with the same interface:
 
-- **Webpages** - [trafilatura](https://trafilatura.readthedocs.io/) strips navigation, ads, and scripts, leaving just the article. Falls back to [httpx](https://www.python-httpx.org/) with browser headers, then optionally to [Playwright](https://playwright.dev/) for sites behind Cloudflare or bot protection (`pip install getbrief[playwright]`).
-- **Videos** - [yt-dlp](https://github.com/yt-dlp/yt-dlp) fetches captions directly. If none exist, [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcribes the audio locally. Falls back to video metadata (title, description, tags) when neither is available.
+- **Webpages** - [trafilatura](https://trafilatura.readthedocs.io/) strips navigation, ads, and scripts. Falls back to [httpx](https://www.python-httpx.org/), then optionally [Playwright](https://playwright.dev/) for bot-protected sites.
+- **Videos** - [yt-dlp](https://github.com/yt-dlp/yt-dlp) fetches captions. If none exist, [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcribes audio locally.
 - **PDFs** - [pymupdf](https://pymupdf.readthedocs.io/) extracts text page by page.
+- **Reddit** - fetches post content and top comments via Reddit's JSON API.
+- **GitHub** - fetches repo metadata, README, file tree, and open issues via GitHub's API.
 
 ## Common patterns
 
@@ -49,13 +58,14 @@ Brief handles webpages, videos, and PDFs with the same interface:
 ```python
 from brief import brief_batch, brief
 
+# Triage — which of these are worth reading?
 headlines = brief_batch([
     "https://docs.python.org/3/library/asyncio.html",
     "https://fastapi.tiangolo.com/",
     "https://flask.palletsprojects.com/",
 ], query="python async web framework", depth=0)
 
-# Now only fetch detail on the one that looks relevant
+# Go deep on the one that matters
 detail = brief("https://fastapi.tiangolo.com/", "async support", depth=2)
 ```
 
@@ -71,13 +81,13 @@ result = compare(
 )
 ```
 
-### Check the cache before fetching
+### Check what's already been researched
 
 ```python
 from brief import check_brief
 
 data = check_brief("https://fastapi.tiangolo.com/")
-# Returns the cached brief if it exists, None otherwise
+# Returns existing briefs for this URL, None if not yet briefed
 ```
 
 ## Install
@@ -130,22 +140,20 @@ uvicorn brief.api:app --port 8080
 
 ## The `.briefs/` folder
 
-Every URL gets its own subdirectory. Each query adds a new `.brief` file:
+Every URL gets its own subdirectory. Each (query, depth) adds a new `.brief` file:
 
 ```
 .briefs/
 ├── fastapi-tiangolo-com/
-│   ├── _source.json              ← raw extraction data
-│   ├── overview.brief            ← generic summary
-│   ├── async-support.brief       ← Agent A's question
-│   └── how-to-deploy.brief       ← Agent B's question
-└── _index.sqlite3                ← fast lookups
+│   ├── _source.json                 raw extraction, no LLM output
+│   ├── async-support.brief          depth=1 answer
+│   └── async-support-deep.brief     depth=2 answer, same query, richer
+└── _index.sqlite3                   fast lookups
 ```
 
-One agent researches, another reasons, another writes, nothing gets fetched or summarized twice. Each `.brief` file includes a TRAIL section listing sibling briefs, so any agent can see what else has been researched.
+One agent researches, another reasons, another writes. Each `.brief` file includes a TRAIL section listing sibling briefs, so any agent knows what else has been asked about that source. Any agent can read `.briefs/` directly, just plain text files, no special tools needed.
 
-Any agent can read `.briefs/` directly, just plain text files, no special tools needed. Agents can also use `brief_content()`, `check_existing_brief()`, or `grep` across files to find what they need.
-
+`.brief` is a plain text format, readable by humans, usable by any agent, and simple enough to share, version, or commit alongside your code.
 
 ## Configuration
 
@@ -168,11 +176,9 @@ BRIEF_STT_API_KEY=sk-your-openai-key
 
 ## Contributing
 
-Brief is designed to be easy to extend and contributions are welcome, whether that's a new content type, a better summarization strategy, or improvements to the CLI or API. New extractors live in `brief/extractors/` and each one is just a single file implementing one function:
+Brief is designed to be easy to extend. Contributions are welcome, whether that's a new content type, a better summarization strategy, or improvements to the CLI or API. New extractors live in `brief/extractors/` and each one is a single file implementing one function:
 
 ```python
 def extract(uri: str) -> list[dict[str, Any]]:
-    """Return a list of chunks with 'text', 'start_sec', 'end_sec' keys."""
+    """Return a list of chunks with 'text' and 'start_sec' keys."""
 ```
-
-Adding support for a new type (audio, spreadsheets, etc.) is a single file addition. Contributions welcome.
