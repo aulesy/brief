@@ -21,6 +21,16 @@ _HEADERS = {
 }
 
 
+def _human_size(size_bytes: int) -> str:
+    """Format byte count as human-readable string."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    else:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
 def _parse_github_url(uri: str) -> tuple[str, str] | None:
     """Extract owner/repo from a GitHub URL. Returns (owner, repo) or None."""
     # Match: github.com/owner/repo or github.com/owner/repo/...
@@ -111,6 +121,53 @@ def extract(uri: str) -> list[dict[str, Any]]:
                 })
     except Exception as exc:
         logger.debug("Could not fetch README: %s", exc)
+
+    # ── File tree ──
+    try:
+        resp = httpx.get(
+            f"{api_base}/contents",
+            headers=_HEADERS,
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            contents = resp.json()
+            tree_lines = ["Repository structure:"]
+
+            for item in sorted(contents, key=lambda x: (x.get("type") != "dir", x.get("name", ""))):
+                name = item.get("name", "")
+                item_type = item.get("type", "")
+                size = item.get("size", 0)
+
+                if item_type == "dir":
+                    tree_lines.append(f"  {name}/")
+                    # Fetch one level deeper for directories
+                    try:
+                        sub_resp = httpx.get(
+                            f"{api_base}/contents/{name}",
+                            headers=_HEADERS,
+                            timeout=10,
+                        )
+                        if sub_resp.status_code == 200:
+                            sub_contents = sub_resp.json()
+                            for sub in sorted(sub_contents, key=lambda x: x.get("name", ""))[:15]:
+                                sub_name = sub.get("name", "")
+                                sub_type = sub.get("type", "")
+                                sub_size = sub.get("size", 0)
+                                if sub_type == "dir":
+                                    tree_lines.append(f"    {sub_name}/")
+                                else:
+                                    tree_lines.append(f"    {sub_name} ({_human_size(sub_size)})")
+                    except Exception:
+                        pass
+                else:
+                    tree_lines.append(f"  {name} ({_human_size(size)})")
+
+            chunks.append({
+                "text": "\n".join(tree_lines),
+                "start_sec": 1.5,
+            })
+    except Exception as exc:
+        logger.debug("Could not fetch file tree: %s", exc)
 
     # ── Top issues (recent, open) ──
     try:
