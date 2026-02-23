@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 _store = BriefStore()
 
 _VIDEO_SCHEMES = {"youtube.com", "youtu.be", "vimeo.com", "tiktok.com", "dailymotion.com"}
+_REDDIT_HOSTS = {"reddit.com", "old.reddit.com", "np.reddit.com"}
 
 
 def _validate_url(uri: str) -> str | None:
@@ -34,8 +35,10 @@ def _validate_url(uri: str) -> str | None:
     parsed = urlparse(uri)
     host = parsed.hostname or ""
 
-    # Skip validation for video platforms — yt-dlp handles these directly
+    # Skip validation for video platforms and Reddit — they have their own extraction
     if any(vh in host for vh in _VIDEO_SCHEMES):
+        return None
+    if any(rh in host for rh in _REDDIT_HOSTS):
         return None
 
     try:
@@ -225,6 +228,9 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
     elif content_type == "webpage":
         from .extractors.webpage import extract as extract_webpage
         chunks = extract_webpage(uri)
+    elif content_type == "reddit":
+        from .extractors.reddit import extract as extract_reddit
+        chunks = extract_reddit(uri)
     elif content_type == "pdf":
         from .extractors.pdf import extract as extract_pdf
         chunks = extract_pdf(uri)
