@@ -20,6 +20,7 @@ app = typer.Typer(add_completion=False, pretty_exceptions_enable=False)
 def main(
     uri: str = typer.Option(None, help="Content URI to brief (video URL, page URL, etc.)"),
     batch: list[str] = typer.Option(None, help="Multiple URIs to brief in parallel"),
+    compare_mode: bool = typer.Option(False, "--compare", help="Compare multiple sources side by side"),
     query: str = typer.Option("summarize this content", help="What the consuming agent wants to know"),
     depth: int = typer.Option(1, "--depth", min=0, max=2, help="Detail level: 0=headline, 1=summary, 2=deep dive"),
     list_briefs: bool = typer.Option(False, "--list", help="List all existing briefs"),
@@ -48,7 +49,7 @@ def main(
         raise typer.Exit()
 
     # ── Batch mode ────────────────────────────────────────────────
-    if batch:
+    if batch and not compare_mode:
         from brief import brief_batch
 
         typer.echo(f"Briefing {len(batch)} URLs at depth={depth}...\n", err=True)
@@ -61,11 +62,24 @@ def main(
             typer.echo()
         raise typer.Exit()
 
+    # ── Compare mode ─────────────────────────────────────────────
+    if compare_mode:
+        urls = batch or ([uri] if uri else [])
+        if len(urls) < 2:
+            typer.echo("Error: --compare needs at least 2 URLs via --batch")
+            raise typer.Exit(1)
+        from .service import compare
+        typer.echo(f"Comparing {len(urls)} sources at depth={depth}...\n", err=True)
+        result = compare(urls, query=query, depth=depth)
+        typer.echo(result)
+        raise typer.Exit()
+
     # ── Single URI mode ───────────────────────────────────────────
     if not uri:
-        typer.echo("Error: --uri or --batch is required.\n"
+        typer.echo("Error: --uri, --batch, or --compare is required.\n"
                    "  brief --uri 'https://example.com' --query 'key takeaways'\n"
-                   "  brief --batch 'https://url1.com' --batch 'https://url2.com' --depth 0")
+                   "  brief --batch 'https://url1.com' --batch 'https://url2.com' --depth 0\n"
+                   "  brief --compare --batch 'https://url1.com' --batch 'https://url2.com' --query 'compare'")
         raise typer.Exit(1)
 
     from .service import brief, get_brief_data

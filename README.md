@@ -39,7 +39,7 @@ depth=1   summary     2-3 sentences + key points (default)
 depth=2   deep dive   detailed analysis with specifics, examples, trade-offs
 ```
 
-Each (query, depth) combination is cached as a separate `.brief` file. Ask the same question twice, instant. Ask a new question, one LLM call, reuses the cached extraction.
+Each (query, depth) pair gets its own `.brief` file.
 
 ## Content types
 
@@ -209,7 +209,7 @@ GITHUB_TOKEN=ghp_your-token
 - **Paywalled / auth-protected content** - Brief returns a clear error for 401/403/429 responses. It cannot extract content behind logins or paywalls.
 - **Bot protection (Cloudflare, etc.)** - Install Playwright: `pip install getbrief[playwright] && playwright install chromium`
 - **Stale or bad summary** - Use `--force` to skip cache and re-extract: `brief --uri <URL> --force`
-- **Clear all cached data** - Delete the `.briefs/` folder: `rm -rf .briefs/`
+- **Clear all cached data** - Delete the `.briefs/` folder.
 - **LLM not responding** - Check your `.env` file has valid API keys. Brief falls back to a heuristic summary if the LLM is unavailable.
 
 ## Contributing
