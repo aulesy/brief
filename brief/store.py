@@ -309,17 +309,42 @@ class BriefStore:
     # ── Comparison caching ────────────────────────────────────────
 
     @staticmethod
-    def _comparison_key(uris: list[str], query: str, depth: int) -> str:
-        """Create an order-invariant cache key for a comparison.
+    def _short_slug(uri: str) -> str:
+        """Extract a short readable name from a URI for comparison filenames."""
+        from urllib.parse import urlparse
+        parsed = urlparse(uri)
+        host = (parsed.hostname or "unknown").replace("www.", "")
+        # Take just the first part of the domain (e.g. "fastapi" from "fastapi.tiangolo.com")
+        parts = host.split(".")
+        # Use the most meaningful part — skip generic TLDs
+        slug = parts[0] if len(parts) <= 2 else parts[0]
+        # If first part is too generic (like "docs"), use first two parts
+        if slug in ("docs", "api", "www", "blog", "app", "dev") and len(parts) > 1:
+            slug = f"{parts[0]}-{parts[1]}"
+        return re.sub(r"[^a-z0-9]", "-", slug.lower()).strip("-")[:20]
 
-        Sorting URIs ensures the same set of URLs in any order
-        produces the same key.
+    def _comparison_key(self, uris: list[str], query: str, depth: int) -> str:
+        """Create a human-readable, order-invariant filename for a comparison.
+
+        Format: source1-vs-source2--query-slug.brief
+        Up to 4 sources shown, then +N for additional.
         """
-        canonical = "|".join(sorted(uri.strip().rstrip(",;") for uri in uris))
-        raw = f"{canonical}:{query}:{depth}"
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+        # Sort for order invariance
+        sorted_uris = sorted(uri.strip().rstrip(",;") for uri in uris)
+        slugs = [self._short_slug(uri) for uri in sorted_uris]
 
-    def check_comparison(self, uris: list[str], query: str, depth: int = 2) -> str | None:
+        # Show up to 4 slugs, then +N
+        if len(slugs) <= 4:
+            source_part = "-vs-".join(slugs)
+        else:
+            source_part = "-vs-".join(slugs[:4]) + f"-+{len(slugs) - 4}"
+
+        # Query slug
+        query_slug = self._query_slug(query, depth)
+
+        return f"{source_part}--{query_slug}"
+
+    def check_comparison(self, uris: list[str], query: str, depth: int = 1) -> str | None:
         """Check if a comparison has been cached. Returns text or None."""
         comp_dir = self.briefs_dir / "_comparisons"
         key = self._comparison_key(uris, query, depth)
