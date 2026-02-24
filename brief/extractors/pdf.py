@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 def _download_pdf(uri: str) -> str | None:
     """Download a PDF URL to a temp file."""
     try:
-        request = Request(uri, headers={"User-Agent": "brief/0.3"})
+        request = Request(uri, headers={"User-Agent": "Brief/0.5"})
         with urlopen(request, timeout=30) as response, tempfile.NamedTemporaryFile(
             delete=False, suffix=".pdf"
         ) as handle:

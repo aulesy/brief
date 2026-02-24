@@ -160,6 +160,7 @@ def _llm_summary(
                 ],
                 temperature=0.2,
                 max_tokens=max_tokens,
+                timeout=60,
             )
         except Exception as sys_err:
             if "400" in str(sys_err) or "system" in str(sys_err).lower():
@@ -171,6 +172,7 @@ def _llm_summary(
                     ],
                     temperature=0.2,
                     max_tokens=max_tokens,
+                    timeout=60,
                 )
             else:
                 raise
@@ -266,6 +268,7 @@ def synthesize_comparison(
                 ],
                 temperature=0.2,
                 max_tokens=1000,
+                timeout=60,
             )
         except Exception as sys_err:
             if "400" in str(sys_err) or "system" in str(sys_err).lower():
@@ -277,6 +280,7 @@ def synthesize_comparison(
                     ],
                     temperature=0.2,
                     max_tokens=1000,
+                    timeout=60,
                 )
             else:
                 raise

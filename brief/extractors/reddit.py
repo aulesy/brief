@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # User-Agent is required by Reddit's API — they block generic agents
 _HEADERS = {
-    "User-Agent": "Brief/0.4 (content extraction for AI agents)",
+    "User-Agent": "Brief/0.5 (content extraction for AI agents)",
 }
 
 

@@ -242,6 +242,7 @@ def compare(
     uris: list[str],
     query: str = "summarize this content",
     depth: int = 2,
+    force: bool = False,
 ) -> str:
     """Compare multiple sources against the same query.
 
@@ -251,10 +252,11 @@ def compare(
     from .summarizer import synthesize_comparison
 
     # Check comparison cache first (order-invariant)
-    cached = _store.check_comparison(uris, query, depth)
-    if cached:
-        logger.info("Comparison cache hit")
-        return f"comparison found → .briefs/_comparisons/\n\n{cached}"
+    if not force:
+        cached = _store.check_comparison(uris, query, depth)
+        if cached:
+            logger.info("Comparison cache hit")
+            return f"comparison found → .briefs/_comparisons/\n\n{cached}"
 
     # Collect individual briefs
     brief_texts = []
@@ -264,7 +266,7 @@ def compare(
         lines = result.split("\n")
         content = "\n".join(lines[2:]) if lines[0].startswith("brief") else result
         brief_texts.append(content.strip())
-        parts.append(f"--- source {i} ---\n{content.strip()}")
+        parts.append(f"--- source {i}: {uri} ---\n{content.strip()}")
 
     # Synthesize comparison across all briefs
     print("⟳ Synthesizing comparison...", file=sys.stderr, flush=True)

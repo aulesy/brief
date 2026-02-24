@@ -278,6 +278,32 @@ class BriefStore:
                     "briefs": queries,
                 }
 
+        # Include comparisons if any exist
+        comp_dir = self.briefs_dir / "_comparisons"
+        if comp_dir.is_dir():
+            comp_files = sorted(comp_dir.glob("*.brief"))
+            if comp_files:
+                comps = []
+                for cf in comp_files:
+                    try:
+                        content = cf.read_text(encoding="utf-8")
+                        preview = ""
+                        for line in content.split("\n"):
+                            line = line.strip()
+                            if line and not line.startswith(("═", "─", "===", "---")):
+                                preview = line[:100]
+                                break
+                        comps.append({"file": cf.name, "preview": preview})
+                    except OSError:
+                        continue
+                if comps:
+                    results["_comparisons"] = {
+                        "slug": "_comparisons",
+                        "uri": "",
+                        "type": "comparison",
+                        "briefs": comps,
+                    }
+
         return list(results.values())
 
     # ── Comparison caching ────────────────────────────────────────

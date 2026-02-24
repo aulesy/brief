@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 _HEADERS = {
     "Accept": "application/vnd.github.v3+json",
-    "User-Agent": "Brief/0.4 (content extraction for AI agents)",
+    "User-Agent": "Brief/0.5 (content extraction for AI agents)",
 }
 
 
