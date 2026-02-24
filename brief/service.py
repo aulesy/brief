@@ -239,12 +239,6 @@ def check_existing(uri: str = "") -> str:
             label = "comparison" if g.get("type") == "comparison" else "brief"
             lines.append(f"  {slug}/ ({count} {label}{'s' if count != 1 else ''})")
 
-        # Add stats
-        stats = _store.get_stats()
-        if stats["total_tokens_used"] > 0:
-            lines.append("")
-            lines.append(f"📊 {stats['total_tokens_used']:,} tokens spent, ~{stats['tokens_saved']:,} tokens saved by cache ({stats['total_cache_hits']} cache hits)")
-
         return "\n".join(lines)
 
     queries = _store.check_existing(uri)
