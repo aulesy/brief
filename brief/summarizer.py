@@ -221,8 +221,13 @@ def _llm_summary(
 def synthesize_comparison(
     briefs: list[str],
     query: str = "summarize this content",
+    depth: int = 1,
 ) -> str | None:
     """Compare multiple briefs with a single LLM call.
+
+    depth=0: one-sentence comparison verdict
+    depth=1: paragraph synthesis + per-source notes (default)
+    depth=2: detailed comparative analysis with specifics
 
     Returns a synthesis string, or None if the LLM is unavailable.
     """
@@ -240,13 +245,33 @@ def synthesize_comparison(
     for i, text in enumerate(briefs, 1):
         source_block += f"--- source {i} ---\n{text.strip()}\n\n"
 
-    system_prompt = (
-        "You are a research analyst comparing multiple sources. "
-        "Identify where sources agree, where they differ, and note "
-        "unique insights from each. Be direct and specific. "
-        "Respond with JSON: {\"synthesis\": \"comparative analysis\", "
-        "\"per_source\": [\"what source 1 uniquely contributes\", ...]}"
-    )
+    # Depth-aware prompts
+    if depth == 0:
+        system_prompt = (
+            "You are a research analyst. Compare the sources in one sentence. "
+            "Respond with JSON: {\"synthesis\": \"one sentence comparison\"}"
+        )
+        max_tokens = 150
+    elif depth == 2:
+        system_prompt = (
+            "You are a research analyst comparing multiple sources in detail. "
+            "Provide a thorough comparative analysis: where sources agree, "
+            "where they disagree, unique insights from each, and any gaps. "
+            "Be specific with examples and details from each source. "
+            "Respond with JSON: {\"synthesis\": \"detailed comparative analysis\", "
+            "\"per_source\": [\"what source 1 uniquely contributes\", ...]}"
+        )
+        max_tokens = 2000
+    else:  # depth=1 default
+        system_prompt = (
+            "You are a research analyst comparing multiple sources. "
+            "Identify where sources agree, where they differ, and note "
+            "unique insights from each. Be direct and specific. "
+            "Respond with JSON: {\"synthesis\": \"comparative analysis\", "
+            "\"per_source\": [\"what source 1 uniquely contributes\", ...]}"
+        )
+        max_tokens = 1000
+
     user_content = (
         f"Compare these sources on: {query}\n\n{source_block}"
     )
@@ -257,7 +282,7 @@ def synthesize_comparison(
             client_kwargs["base_url"] = base_url
 
         client = OpenAI(**client_kwargs)
-        logger.info("Calling LLM for comparison synthesis: model=%s", model)
+        logger.info("Calling LLM for comparison synthesis: model=%s depth=%d", model, depth)
 
         try:
             response = client.chat.completions.create(
@@ -267,7 +292,7 @@ def synthesize_comparison(
                     {"role": "user", "content": user_content},
                 ],
                 temperature=0.2,
-                max_tokens=1000,
+                max_tokens=max_tokens,
                 timeout=60,
             )
         except Exception as sys_err:
@@ -279,7 +304,7 @@ def synthesize_comparison(
                         {"role": "user", "content": f"{system_prompt}\n\n{user_content}"},
                     ],
                     temperature=0.2,
-                    max_tokens=1000,
+                    max_tokens=max_tokens,
                     timeout=60,
                 )
             else:
@@ -305,7 +330,7 @@ def synthesize_comparison(
         if parsed and isinstance(parsed.get("synthesis"), str):
             lines = [parsed["synthesis"]]
             per_source = parsed.get("per_source", [])
-            if per_source:
+            if per_source and depth >= 1:
                 lines.append("")
                 for i, note in enumerate(per_source, 1):
                     lines.append(f"  source {i}: {note}")

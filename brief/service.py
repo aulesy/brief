@@ -241,13 +241,18 @@ def check_existing(uri: str) -> str:
 def compare(
     uris: list[str],
     query: str = "summarize this content",
-    depth: int = 2,
+    depth: int = 1,
     force: bool = False,
 ) -> str:
     """Compare multiple sources against the same query.
 
-    Briefs each URI, then makes one more LLM call to synthesize
-    a comparative analysis across all sources.
+    Returns a focused comparison, not the individual briefs.
+    Individual briefs are created and cached separately.
+    Use the TRAIL section to find them.
+
+    depth=0: one-sentence comparison
+    depth=1: synthesis + per-source notes (default)
+    depth=2: detailed comparative analysis
     """
     from .summarizer import synthesize_comparison
 
@@ -258,28 +263,45 @@ def compare(
             logger.info("Comparison cache hit")
             return f"comparison found → .briefs/_comparisons/\n\n{cached}"
 
-    # Collect individual briefs
+    # Brief each source individually (they get cached for later use)
     brief_texts = []
-    parts = []
-    for i, uri in enumerate(uris, 1):
+    source_slugs = []
+    for uri in uris:
         result = brief(uri, query, depth=depth)
         lines = result.split("\n")
         content = "\n".join(lines[2:]) if lines[0].startswith("brief") else result
         brief_texts.append(content.strip())
-        parts.append(f"--- source {i}: {uri} ---\n{content.strip()}")
+        # Track the slug + query file for TRAIL
+        slug = _store._slugify(uri)
+        query_file = _store._query_slug(query, depth) + ".brief"
+        source_slugs.append(f".briefs/{slug}/{query_file}")
 
-    # Synthesize comparison across all briefs
+    # Synthesize comparison
     print("⟳ Synthesizing comparison...", file=sys.stderr, flush=True)
-    synthesis = synthesize_comparison(brief_texts, query=query)
+    synthesis = synthesize_comparison(brief_texts, query=query, depth=depth)
+
+    # Build output
+    lines = []
+    lines.append("═══ COMPARISON " + "═" * 45)
+    lines.append(query)
+    lines.append(f"Sources: {len(uris)} | Depth: {depth} | {datetime.now(timezone.utc).strftime('%Y-%m-%d')}")
+    lines.append("")
 
     if synthesis:
-        result_text = f"=== COMPARISON ===\n{synthesis}\n\n" + "\n".join(parts)
+        lines.append("─── ANALYSIS " + "─" * 47)
+        lines.append(synthesis)
     else:
-        # Fallback: no synthesis available, return just the individual briefs
-        result_text = "\n".join(parts)
+        lines.append("─── ANALYSIS " + "─" * 47)
+        lines.append("Synthesis unavailable (no LLM). See individual briefs below.")
 
-    # Cache the comparison result
+    # TRAIL: point to individual source briefs
+    lines.append("")
+    lines.append("─── TRAIL " + "─" * 50)
+    for i, (uri, path) in enumerate(zip(uris, source_slugs), 1):
+        lines.append(f"→ source {i}: {path}")
+
+    result_text = "\n".join(lines)
+
+    # Cache the comparison
     _store.save_comparison(uris, query, depth, result_text)
     return f"comparison created → .briefs/_comparisons/\n\n{result_text}"
-
-
