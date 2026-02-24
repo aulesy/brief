@@ -216,6 +216,108 @@ def _llm_summary(
     return None
 
 
+def synthesize_comparison(
+    briefs: list[str],
+    query: str = "summarize this content",
+) -> str | None:
+    """Compare multiple briefs with a single LLM call.
+
+    Returns a synthesis string, or None if the LLM is unavailable.
+    """
+    api_key, base_url, model = _get_llm_config()
+    if not api_key:
+        return None
+
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return None
+
+    # Build the source block
+    source_block = ""
+    for i, text in enumerate(briefs, 1):
+        source_block += f"--- source {i} ---\n{text.strip()}\n\n"
+
+    system_prompt = (
+        "You are a research analyst comparing multiple sources. "
+        "Identify where sources agree, where they differ, and note "
+        "unique insights from each. Be direct and specific. "
+        "Respond with JSON: {\"synthesis\": \"comparative analysis\", "
+        "\"per_source\": [\"what source 1 uniquely contributes\", ...]}"
+    )
+    user_content = (
+        f"Compare these sources on: {query}\n\n{source_block}"
+    )
+
+    try:
+        client_kwargs: dict[str, Any] = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+
+        client = OpenAI(**client_kwargs)
+        logger.info("Calling LLM for comparison synthesis: model=%s", model)
+
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content},
+                ],
+                temperature=0.2,
+                max_tokens=1000,
+            )
+        except Exception as sys_err:
+            if "400" in str(sys_err) or "system" in str(sys_err).lower():
+                logger.info("System prompt not supported, retrying as user message")
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "user", "content": f"{system_prompt}\n\n{user_content}"},
+                    ],
+                    temperature=0.2,
+                    max_tokens=1000,
+                )
+            else:
+                raise
+
+        raw = response.choices[0].message.content or ""
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+        # Try to parse JSON
+        parsed = None
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            for fix in [raw + '\"]}', raw + '"}', raw + "]}", raw + "}"]:
+                try:
+                    parsed = json.loads(fix)
+                    break
+                except json.JSONDecodeError:
+                    continue
+
+        if parsed and isinstance(parsed.get("synthesis"), str):
+            lines = [parsed["synthesis"]]
+            per_source = parsed.get("per_source", [])
+            if per_source:
+                lines.append("")
+                for i, note in enumerate(per_source, 1):
+                    lines.append(f"  source {i}: {note}")
+            return "\n".join(lines)
+
+        # Fallback: use raw text if it looks reasonable
+        if raw and len(raw) > 20:
+            logger.warning("Comparison LLM response was not JSON, using raw text")
+            return _truncate(raw, 2000)
+
+    except Exception as exc:
+        logger.warning("Comparison synthesis failed (%s): %s", model, exc)
+
+    return None
+
+
 def summarize(
     chunks: list[dict[str, Any]],
     query: str | None = None,

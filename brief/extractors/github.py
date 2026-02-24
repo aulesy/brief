@@ -77,12 +77,13 @@ def extract(uri: str) -> list[dict[str, Any]]:
     owner, repo = parsed
     api_base = f"https://api.github.com/repos/{owner}/{repo}"
 
-    # Check for optional GitHub token for higher rate limits
+    # Build headers per call — don't mutate module-level dict (race condition in batch)
+    headers = dict(_HEADERS)
     try:
         from .. import config
         token = config.get("GITHUB_TOKEN") or config.get("BRIEF_GITHUB_TOKEN")
         if token:
-            _HEADERS["Authorization"] = f"Bearer {token}"
+            headers["Authorization"] = f"Bearer {token}"
     except Exception:
         pass
 
@@ -90,7 +91,7 @@ def extract(uri: str) -> list[dict[str, Any]]:
 
     # ── Repo metadata ──
     try:
-        resp = httpx.get(api_base, headers=_HEADERS, timeout=15)
+        resp = httpx.get(api_base, headers=headers, timeout=15)
         resp.raise_for_status()
         meta = resp.json()
 
@@ -120,7 +121,7 @@ def extract(uri: str) -> list[dict[str, Any]]:
 
     # ── README ──
     try:
-        resp = httpx.get(f"{api_base}/readme", headers=_HEADERS, timeout=15)
+        resp = httpx.get(f"{api_base}/readme", headers=headers, timeout=15)
         if resp.status_code == 200:
             readme_data = resp.json()
             content = readme_data.get("content", "")
@@ -145,7 +146,7 @@ def extract(uri: str) -> list[dict[str, Any]]:
     try:
         resp = httpx.get(
             f"{api_base}/contents",
-            headers=_HEADERS,
+            headers=headers,
             timeout=15,
         )
         if resp.status_code == 200:
@@ -163,7 +164,7 @@ def extract(uri: str) -> list[dict[str, Any]]:
                     try:
                         sub_resp = httpx.get(
                             f"{api_base}/contents/{name}",
-                            headers=_HEADERS,
+                            headers=headers,
                             timeout=10,
                         )
                         if sub_resp.status_code == 200:
@@ -192,7 +193,7 @@ def extract(uri: str) -> list[dict[str, Any]]:
     try:
         resp = httpx.get(
             f"{api_base}/issues",
-            headers=_HEADERS,
+            headers=headers,
             params={"state": "open", "sort": "updated", "per_page": 10},
             timeout=15,
         )

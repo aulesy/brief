@@ -4,61 +4,68 @@
 
 # Brief
 
-Agents shouldn't have to read to research. They should be able to ask.
+Reading the web is the most expensive thing your agent does, and the least of what it's good at.
 
-Your agent walks up to each source and asks: *do you have what I'm looking for? Can you give me only what I need?* The source answers with exactly that, a headline if you're skimming, a summary if you're curious, a deep dive if you need the full picture.
-
-Brief extracts content once across webpages, videos, PDFs, Reddit, and GitHub. Every question gets a focused answer, shaped by the query, cached so your agents never repeat work, and saved so your whole pipeline can build on it.
-
-> Instead of thinking "I need to read this article," your agent can think "I need to understand this concept across multiple sources." Brief handles the reading. The agent handles the connecting.
-
-## What Brief feels like
-
-Most agents read the web like a student the night before an exam: grab everything, highlight randomly, hope something sticks. Every page gets read cover to cover (or skimmed over), tokens burning whether the content matters or not.
-
-Brief works differently. Your agent doesn't read sources, it interviews them. Ask a question, get an answer. Move on. And because every answer is saved, a team of agents can share the work without any of them repeating it. The more your system runs, the more it already knows.
+Brief reads content so your agent doesn't have to. Give it a URL and a question, and it extracts, summarizes, and caches the answer. Webpages, videos, PDFs, Reddit, GitHub, all through one interface.
 
 ```python
 from brief import brief
 
-# One sentence — is this page even relevant?
+# Is this page even relevant? (~1 sentence)
 brief("https://fastapi.tiangolo.com/", "async support", depth=0)
 
-# Summary + key points — what do I need to know?
+# What do I need to know? (summary + key points)
 brief("https://fastapi.tiangolo.com/", "async support", depth=1)
 
-# Deep dive — give me specifics, examples, gotchas
+# Give me everything. (detailed analysis with examples)
 brief("https://fastapi.tiangolo.com/", "async support", depth=2)
 ```
 
-## Depth levels
+Every answer is cached as a plain `.brief` file. Ask once, reuse forever. A team of agents can share research without repeating work. One agent investigates, another reasons, another writes, and nobody re-reads the same source.
 
+The more your system runs, the more it already knows.
+
+```python
+# Agent A researches FastAPI (extraction + LLM call)
+brief("https://fastapi.tiangolo.com/", "async support", depth=2)
+
+# Minutes later, Agent B is writing a comparison doc.
+# Same URL, same question. Instant. No fetch, no LLM, no tokens.
+check_brief("https://fastapi.tiangolo.com/")
+# → "async-support-deep.brief: FastAPI handles async natively..."
+
+# Agent B goes deeper with a new question. One LLM call, no re-extraction.
+brief("https://fastapi.tiangolo.com/", "error handling", depth=1)
 ```
-depth=0   headline    one sentence — is this worth reading?
-depth=1   summary     2-3 sentences + key points (default)
-depth=2   deep dive   detailed analysis with specifics, examples, trade-offs
+
+Agent A paid the cost. Agent B got it free. Agents should spend tokens on reasoning, not searching.
+
+## Install
+
+Requires Python 3.12+.
+
+```bash
+pip install getbrief
 ```
 
-Each (query, depth) pair gets its own `.brief` file.
+Brief uses any OpenAI-compatible LLM for summarization. Create a `.env` file:
 
-## Content types
+```bash
+BRIEF_LLM_API_KEY=sk-or-v1-your-key
+BRIEF_LLM_BASE_URL=https://openrouter.ai/api/v1
+BRIEF_LLM_MODEL=google/gemma-3-4b-it:free # any OpenRouter free or cheap model works
+```
 
-Brief handles webpages, videos, PDFs, Reddit, and GitHub with the same interface:
-
-- **Webpages** - [trafilatura](https://trafilatura.readthedocs.io/) strips navigation, ads, and scripts. Falls back to [httpx](https://www.python-httpx.org/), then optionally [Playwright](https://playwright.dev/) for bot-protected sites.
-- **Videos** - [yt-dlp](https://github.com/yt-dlp/yt-dlp) fetches captions. If none exist, [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcribes audio locally.
-- **PDFs** - [pymupdf](https://pymupdf.readthedocs.io/) extracts text page by page.
-- **Reddit** - fetches post content and top comments via Reddit's JSON API.
-- **GitHub** - fetches repo metadata, README, file tree, and open issues via GitHub's API.
+Free models work great. Also works with OpenAI, Ollama (local), and Groq. See [.env.example](.env.example) for all options.
 
 ## Common patterns
 
-### Scan many URLs cheaply, then read what matters
+### Triage many URLs, then go deep on what matters
 
 ```python
 from brief import brief_batch, brief
 
-# Triage — which of these are worth reading?
+# Scan 10 URLs for pennies. Which ones are relevant?
 headlines = brief_batch([
     "https://docs.python.org/3/library/asyncio.html",
     "https://fastapi.tiangolo.com/",
@@ -69,11 +76,12 @@ headlines = brief_batch([
 detail = brief("https://fastapi.tiangolo.com/", "async support", depth=2)
 ```
 
-### Compare sources side by side
+### Compare sources
 
 ```python
 from brief import compare
 
+# Briefs each source, then synthesizes a comparison
 result = compare(
     ["https://fastapi.tiangolo.com/", "https://flask.palletsprojects.com/"],
     query="how do they handle middleware",
@@ -86,26 +94,29 @@ result = compare(
 ```python
 from brief import check_brief
 
-data = check_brief("https://fastapi.tiangolo.com/")
-# Returns existing briefs for this URL, None if not yet briefed
+# See what queries have already been answered for this URL
+check_brief("https://fastapi.tiangolo.com/")
 ```
 
-## Install
+## Depth levels
 
-Requires Python 3.12+.
-
-```bash
-pip install getbrief
+```
+depth=0   headline    one sentence, is this worth reading?
+depth=1   summary     2-3 sentences + key points (default)
+depth=2   deep dive   detailed analysis with specifics, examples, trade-offs
 ```
 
-For video transcription, you'll need [ffmpeg](https://ffmpeg.org/) installed. For bot-protected sites:
+Each (query, depth) pair produces its own `.brief` file.
 
-```bash
-pip install getbrief[playwright]
-playwright install chromium
-```
+## Content types
 
-Brief uses any OpenAI-compatible LLM for summarization. Add your API key to a `.env` file, see [Configuration](#configuration). Free models work well.
+Brief handles five content types with the same interface:
+
+- **Webpages** — [trafilatura](https://trafilatura.readthedocs.io/) strips navigation, ads, and scripts. Falls back to [httpx](https://www.python-httpx.org/), then optionally [Playwright](https://playwright.dev/) for bot-protected sites.
+- **Videos** — [yt-dlp](https://github.com/yt-dlp/yt-dlp) fetches captions. If none exist, [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcribes audio locally.
+- **PDFs** — [pymupdf](https://pymupdf.readthedocs.io/) extracts text page by page.
+- **Reddit** — fetches post content and top comments via Reddit's JSON API.
+- **GitHub** — fetches repo metadata, README, file tree, and open issues via GitHub's API.
 
 ## Interfaces
 
@@ -120,6 +131,7 @@ from brief import brief, brief_batch, compare, check_brief
 ```bash
 brief --uri "https://example.com" --query "key takeaways"
 brief --uri "https://example.com" --depth 0
+brief --compare --batch "https://url1.com" --batch "https://url2.com" --query "compare"
 brief --list
 ```
 
@@ -140,6 +152,13 @@ brief --list
   }
 }
 ```
+
+This gives your agent four tools:
+
+- **brief_content** — brief a URL with a query at depth 0–2
+- **check_existing_brief** — see what's already been asked about a URL
+- **list_briefs** — show all cached briefs
+- **compare_sources** — same question across multiple URLs, with synthesis
 
 ### HTTP API
 
@@ -170,32 +189,36 @@ Every URL gets its own subdirectory. Each (query, depth) adds a new `.brief` fil
 │   ├── _source.json                 raw extraction, no LLM output
 │   ├── async-support.brief          depth=1 answer
 │   └── async-support-deep.brief     depth=2 answer, same query, richer
+├── _comparisons/                    cached cross-source comparisons
 └── _index.sqlite3                   fast lookups
 ```
 
-One agent researches, another reasons, another writes. Each `.brief` file includes a TRAIL section listing sibling briefs, so any agent knows what else has been asked about that source. Any agent can read `.briefs/` directly, just plain text files, no special tools needed.
+Each `.brief` file includes a TRAIL section at the bottom, listing sibling briefs for the same source:
 
-`.brief` is a plain text format, readable by humans, usable by any agent, and simple enough to share, version, or commit alongside your code.
+```
+─── TRAIL ──────────────────────────────────────
+→ async-support.brief
+→ error-handling-deep.brief
+→ _source.json
+```
+
+When an agent opens any `.brief` file, it instantly sees what else has already been asked about that source. No API call, no index lookup, just read the file. This means agents can build on each other's research naturally.
 
 ## Configuration
 
-Brief uses any OpenAI-compatible provider for summarization. Create a `.env` file in your project root:
+Brief uses any OpenAI-compatible provider. `OPENAI_API_KEY` also works as a fallback if `BRIEF_LLM_API_KEY` is not set.
+
+For video transcription without captions:
 
 ```bash
-# OpenRouter (one key, many models)
-BRIEF_LLM_API_KEY=sk-or-v1-your-key
-BRIEF_LLM_BASE_URL=https://openrouter.ai/api/v1
-BRIEF_LLM_MODEL=google/gemma-3-4b-it:free
+pip install getbrief[transcribe]  # installs faster-whisper
 ```
 
-`OPENAI_API_KEY` also works as a fallback if `BRIEF_LLM_API_KEY` is not set.
-
-Also works with OpenAI, Ollama (local), and Groq. See [.env.example](.env.example) for all options.
-
-For videos without captions, Brief transcribes audio locally using `faster-whisper`. To use OpenAI's Whisper API instead:
+For bot-protected sites (Cloudflare, etc.):
 
 ```bash
-BRIEF_STT_API_KEY=sk-your-openai-key
+pip install getbrief[playwright]
+playwright install chromium
 ```
 
 For GitHub repos, the public API is rate-limited to 60 requests/hour. Set a token for higher limits:
@@ -206,17 +229,19 @@ GITHUB_TOKEN=ghp_your-token
 
 ## Troubleshooting
 
-- **Paywalled / auth-protected content** - Brief returns a clear error for 401/403/429 responses. It cannot extract content behind logins or paywalls.
-- **Bot protection (Cloudflare, etc.)** - Install Playwright: `pip install getbrief[playwright] && playwright install chromium`
-- **Stale or bad summary** - Use `--force` to skip cache and re-extract: `brief --uri <URL> --force`
-- **Clear all cached data** - Delete the `.briefs/` folder.
-- **LLM not responding** - Check your `.env` file has valid API keys. Brief falls back to a heuristic summary if the LLM is unavailable.
+- **Paywalled / auth-protected content** — Brief returns a clear error for 401/403/429 responses. It cannot extract content behind logins or paywalls.
+- **Bot protection (Cloudflare, etc.)** — Install Playwright: `pip install getbrief[playwright] && playwright install chromium`
+- **Stale or bad summary** — Use `--force` to skip cache and re-extract: `brief --uri <URL> --force`
+- **Clear all cached data** — Delete the `.briefs/` folder.
+- **LLM not responding** — Check your `.env` file has valid API keys. Brief falls back to a heuristic summary if the LLM is unavailable.
 
 ## Contributing
 
-Brief is designed to be easy to extend. Contributions are welcome, whether that's a new content type, a better summarization strategy, or improvements to the CLI or API. New extractors live in `brief/extractors/` and each one is a single file implementing one function:
+Brief is designed to be easy to extend. New extractors live in `brief/extractors/` and each one is a single file implementing one function:
 
 ```python
 def extract(uri: str) -> list[dict[str, Any]]:
     """Return a list of chunks with 'text' and 'start_sec' keys."""
 ```
+
+Contributions welcome: new content types, better summarization, CLI improvements, or API enhancements.

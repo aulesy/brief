@@ -35,7 +35,7 @@ def create_brief(req: BriefRequest):
     from .service import brief
 
     store = BriefStore()
-    was_cached = store.check(req.uri) is not None
+    was_cached = store.check_query(req.uri, req.query, req.depth) is not None
 
     rendered = brief(req.uri, req.query, force=req.force, depth=req.depth)
     return BriefResponse(rendered=rendered, cached=was_cached and not req.force)

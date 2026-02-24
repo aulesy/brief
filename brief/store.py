@@ -280,6 +280,48 @@ class BriefStore:
 
         return list(results.values())
 
+    # ── Comparison caching ────────────────────────────────────────
+
+    @staticmethod
+    def _comparison_key(uris: list[str], query: str, depth: int) -> str:
+        """Create an order-invariant cache key for a comparison.
+
+        Sorting URIs ensures the same set of URLs in any order
+        produces the same key.
+        """
+        canonical = "|".join(sorted(uri.strip().rstrip(",;") for uri in uris))
+        raw = f"{canonical}:{query}:{depth}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+    def check_comparison(self, uris: list[str], query: str, depth: int = 2) -> str | None:
+        """Check if a comparison has been cached. Returns text or None."""
+        comp_dir = self.briefs_dir / "_comparisons"
+        key = self._comparison_key(uris, query, depth)
+        comp_path = comp_dir / f"{key}.brief"
+
+        if not comp_path.exists():
+            return None
+
+        try:
+            text = comp_path.read_text(encoding="utf-8")
+            logger.debug("Comparison cache hit: %s", key)
+            return text
+        except OSError:
+            return None
+
+    def save_comparison(self, uris: list[str], query: str, depth: int,
+                        comparison_text: str) -> Path:
+        """Save a comparison result as a .brief file."""
+        comp_dir = self.briefs_dir / "_comparisons"
+        comp_dir.mkdir(parents=True, exist_ok=True)
+        key = self._comparison_key(uris, query, depth)
+        comp_path = comp_dir / f"{key}.brief"
+
+        comp_path.write_text(comparison_text, encoding="utf-8")
+        logger.info("Saved comparison: _comparisons/%s.brief", key)
+        return comp_path
+
+
     # ── Backwards compatibility ───────────────────────────────────
 
     def check(self, uri: str) -> dict[str, Any] | None:

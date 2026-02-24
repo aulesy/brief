@@ -243,12 +243,41 @@ def compare(
     query: str = "summarize this content",
     depth: int = 2,
 ) -> str:
-    """Compare multiple sources against the same query."""
+    """Compare multiple sources against the same query.
+
+    Briefs each URI, then makes one more LLM call to synthesize
+    a comparative analysis across all sources.
+    """
+    from .summarizer import synthesize_comparison
+
+    # Check comparison cache first (order-invariant)
+    cached = _store.check_comparison(uris, query, depth)
+    if cached:
+        logger.info("Comparison cache hit")
+        return f"comparison found → .briefs/_comparisons/\n\n{cached}"
+
+    # Collect individual briefs
+    brief_texts = []
     parts = []
     for i, uri in enumerate(uris, 1):
         result = brief(uri, query, depth=depth)
         lines = result.split("\n")
         content = "\n".join(lines[2:]) if lines[0].startswith("brief") else result
+        brief_texts.append(content.strip())
         parts.append(f"--- source {i} ---\n{content.strip()}")
 
-    return "\n".join(parts)
+    # Synthesize comparison across all briefs
+    print("⟳ Synthesizing comparison...", file=sys.stderr, flush=True)
+    synthesis = synthesize_comparison(brief_texts, query=query)
+
+    if synthesis:
+        result_text = f"=== COMPARISON ===\n{synthesis}\n\n" + "\n".join(parts)
+    else:
+        # Fallback: no synthesis available, return just the individual briefs
+        result_text = "\n".join(parts)
+
+    # Cache the comparison result
+    _store.save_comparison(uris, query, depth, result_text)
+    return f"comparison created → .briefs/_comparisons/\n\n{result_text}"
+
+

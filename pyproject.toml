@@ -11,13 +11,13 @@ requires-python = ">=3.12"
 license = {text = "MIT"}
 dependencies = [
   "fastapi>=0.115.0",
+  "httpx>=0.27.0",
   "openai>=1.55.0",
   "pydantic>=2.8.0",
   "typer>=0.12.0",
   "uvicorn>=0.30.0",
   "trafilatura>=2.0.0",
   "pymupdf>=1.24.0",
-  "faster-whisper>=1.0.0",
   "mcp>=1.0.0",
 ]
 
@@ -27,6 +27,9 @@ dev = [
 ]
 playwright = [
   "playwright>=1.40.0",
+]
+transcribe = [
+  "faster-whisper>=1.0.0",
 ]
 
 [project.scripts]

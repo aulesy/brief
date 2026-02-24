@@ -19,12 +19,12 @@ Usage:
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from .service import brief, get_brief_data, compare, _store
+from .service import brief, get_brief_data, compare, check_existing, _store
 
 
 def check_brief(uri: str):
-    """Check if a brief exists for this URI. Returns brief dict or None."""
-    return _store.check(uri)
+    """Check what briefs exist for this URI. Returns summary string or None."""
+    return check_existing(uri)
 
 
 def brief_batch(
