@@ -85,7 +85,7 @@ from brief import compare
 result = compare(
     ["https://fastapi.tiangolo.com/", "https://flask.palletsprojects.com/"],
     query="how do they handle middleware",
-    depth=2,
+    depth=1,
 )
 ```
 
@@ -94,7 +94,10 @@ result = compare(
 ```python
 from brief import check_brief
 
-# See what queries have already been answered for this URL
+# Overview of all sources
+check_brief()
+
+# Detail for a specific URL
 check_brief("https://fastapi.tiangolo.com/")
 ```
 
@@ -153,12 +156,11 @@ brief --list
 }
 ```
 
-This gives your agent four tools:
+This gives your agent three tools:
 
 - **brief_content** — brief a URL with a query at depth 0–2
-- **check_existing_brief** — see what's already been asked about a URL
-- **list_briefs** — show all cached briefs
-- **compare_sources** — same question across multiple URLs, with synthesis
+- **check_existing_brief** — no URI = overview of all sources, with URI = what's been asked about it
+- **compare_sources** — compare multiple URLs with synthesis + TRAIL breadcrumbs
 
 ### HTTP API
 
