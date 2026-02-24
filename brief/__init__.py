@@ -22,8 +22,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from .service import brief, get_brief_data, compare, check_existing, _store
 
 
-def check_brief(uri: str):
-    """Check what briefs exist for this URI. Returns summary string or None."""
+def check_brief(uri: str = ""):
+    """Check what briefs exist. No URI = overview, with URI = detail."""
     return check_existing(uri)
 
 

@@ -218,8 +218,26 @@ def get_brief_data(uri: str) -> dict[str, Any] | None:
     return _store.check_source(uri)
 
 
-def check_existing(uri: str) -> str:
-    """Check what briefs exist for a URI. Returns a human-readable summary."""
+def check_existing(uri: str = "") -> str:
+    """Check what briefs exist. No URI = compact overview, with URI = detail."""
+    if not uri:
+        # Compact overview of all sources
+        groups = _store.list_all()
+        if not groups:
+            return "no briefs yet"
+
+        source_count = sum(1 for g in groups if g.get("type") != "comparison")
+        comp_count = sum(1 for g in groups if g.get("type") == "comparison")
+
+        lines = [f".briefs/ — {source_count} source{'s' if source_count != 1 else ''}, {comp_count} comparison{'s' if comp_count != 1 else ''}", ""]
+        for g in groups:
+            slug = g.get("slug", "")
+            briefs = g.get("briefs", [])
+            count = len(briefs)
+            label = "comparison" if g.get("type") == "comparison" else "brief"
+            lines.append(f"  {slug}/ ({count} {label}{'s' if count != 1 else ''})")
+        return "\n".join(lines)
+
     queries = _store.check_existing(uri)
     if not queries:
         return f"No briefs exist for {uri}. Call brief_content to create one."
