@@ -59,15 +59,17 @@ class BriefStore:
                 )
                 """
             )
-            # Migration: add depth and key_points columns if missing
-            try:
-                conn.execute("SELECT depth FROM briefs LIMIT 1")
-            except sqlite3.OperationalError:
-                conn.execute("ALTER TABLE briefs ADD COLUMN depth INTEGER DEFAULT 1")
-            try:
-                conn.execute("SELECT key_points FROM briefs LIMIT 1")
-            except sqlite3.OperationalError:
-                conn.execute("ALTER TABLE briefs ADD COLUMN key_points TEXT")
+            # Migration: add columns if missing
+            for col, default in [
+                ("depth", "INTEGER DEFAULT 1"),
+                ("key_points", "TEXT"),
+                ("tokens_used", "INTEGER DEFAULT 0"),
+                ("cache_hits", "INTEGER DEFAULT 0"),
+            ]:
+                try:
+                    conn.execute(f"SELECT {col} FROM briefs LIMIT 1")
+                except sqlite3.OperationalError:
+                    conn.execute(f"ALTER TABLE briefs ADD COLUMN {col} {default}")
             conn.commit()
 
     @staticmethod
@@ -160,7 +162,8 @@ class BriefStore:
             return None
 
     def save_query(self, uri: str, query: str, depth: int, brief_text: str,
-                   summary: str = "", key_points: list[str] | None = None) -> Path:
+                   summary: str = "", key_points: list[str] | None = None,
+                   tokens_used: int = 0) -> Path:
         """Save a query-specific .brief file and update the index."""
         url_dir = self._url_dir(uri)
         query_filename = self._query_slug(query, depth) + ".brief"
@@ -171,6 +174,7 @@ class BriefStore:
             uri, query, depth, query_filename,
             summary=summary,
             key_points=key_points,
+            tokens_used=tokens_used,
         )
 
         # Update trail in all sibling briefs
@@ -208,6 +212,7 @@ class BriefStore:
     def _index_brief(self, uri: str, query: str | None, depth: int,
                      filename: str, summary: str = "",
                      key_points: list[str] | None = None,
+                     tokens_used: int = 0,
                      created: str = "") -> None:
         """Add or update a brief in the SQLite index."""
         key = self._uri_hash(uri)
@@ -216,11 +221,43 @@ class BriefStore:
         with self._connect() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO briefs
-                   (uri, uri_hash, query, depth, slug, filename, summary, key_points, created)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (uri, key, query, depth, slug, filename, summary, kp_json, created),
+                   (uri, uri_hash, query, depth, slug, filename, summary, key_points, tokens_used, created)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (uri, key, query, depth, slug, filename, summary, kp_json, tokens_used, created),
             )
             conn.commit()
+
+    def record_cache_hit(self, uri: str, query: str, depth: int) -> None:
+        """Increment cache_hits counter for a specific brief."""
+        key = self._uri_hash(uri)
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE briefs SET cache_hits = cache_hits + 1 WHERE uri_hash = ? AND query = ? AND depth = ?",
+                (key, query, depth),
+            )
+            conn.commit()
+
+    def get_stats(self) -> dict:
+        """Get aggregate token usage and cache stats."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(tokens_used), 0), COALESCE(SUM(cache_hits), 0), COUNT(*) FROM briefs"
+            ).fetchone()
+            total_tokens = row[0]
+            total_cache_hits = row[1]
+            total_briefs = row[2]
+
+            # Estimate tokens saved: each cache hit saved roughly the same tokens as the original call
+            # We calculate average tokens per brief and multiply by cache hits
+            avg_tokens = total_tokens / total_briefs if total_briefs > 0 else 0
+            tokens_saved = int(avg_tokens * total_cache_hits)
+
+            return {
+                "total_briefs": total_briefs,
+                "total_tokens_used": total_tokens,
+                "total_cache_hits": total_cache_hits,
+                "tokens_saved": tokens_saved,
+            }
 
     def check_existing(self, uri: str) -> list[dict[str, Any]]:
         """List all queries answered for a URI (for check_existing_brief MCP tool)."""

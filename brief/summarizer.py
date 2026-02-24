@@ -178,6 +178,12 @@ def _llm_summary(
                 raise
 
         raw = response.choices[0].message.content or ""
+        tokens_used = 0
+        if hasattr(response, 'usage') and response.usage:
+            tokens_used = (response.usage.prompt_tokens or 0) + (response.usage.completion_tokens or 0)
+            logger.info("LLM tokens: prompt=%d completion=%d total=%d",
+                        response.usage.prompt_tokens or 0,
+                        response.usage.completion_tokens or 0, tokens_used)
         raw = raw.strip()
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
@@ -202,7 +208,7 @@ def _llm_summary(
                 max_summary = {0: 160, 1: 500, 2: 2000}.get(depth, 500)
                 max_kp = {0: 0, 1: 120, 2: 300}.get(depth, 120)
                 truncated_kp = [_truncate(str(kp), max_kp) for kp in key_points[:8]] if max_kp else []
-                return _truncate(summary, max_summary), truncated_kp
+                return _truncate(summary, max_summary), truncated_kp, tokens_used
 
         # LLM returned something but it wasn't valid JSON — use raw text as summary
         if raw and len(raw) > 20:
@@ -210,7 +216,7 @@ def _llm_summary(
             print(f"⚠ LLM returned plain text instead of JSON, using as-is", file=sys.stderr, flush=True)
             logger.warning("LLM response was not JSON (%d chars), using raw text", len(raw))
             max_summary = {0: 160, 1: 500, 2: 2000}.get(depth, 500)
-            return _truncate(raw, max_summary), []
+            return _truncate(raw, max_summary), [], tokens_used
 
     except Exception as exc:
         logger.warning("LLM summary failed (%s): %s", model, exc)
@@ -351,18 +357,19 @@ def summarize(
     chunks: list[dict[str, Any]],
     query: str | None = None,
     depth: int = 1,
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[str], int]:
     """Generate a depth-aware, query-focused summary.
 
     depth=0: one-sentence headline
     depth=1: 2-3 sentence summary + key points
     depth=2: detailed analysis with specifics
 
-    Returns (summary, key_points).
+    Returns (summary, key_points, tokens_used).
     """
     llm_result = _llm_summary(chunks, query=query, depth=depth)
     if llm_result is not None:
         return llm_result
 
     logger.debug("Using heuristic summary fallback.")
-    return _heuristic_summary(chunks)
+    summary, kp = _heuristic_summary(chunks)
+    return summary, kp, 0

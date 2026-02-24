@@ -156,6 +156,7 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
         if depth > 0:
             cached = _store.check_query(uri, query, depth)
             if cached:
+                _store.record_cache_hit(uri, query, depth)
                 logger.info("Cache hit: %s / %s (depth=%d)", slug, query, depth)
                 return f"brief found → .briefs/{slug}/\n\n{cached}"
 
@@ -189,7 +190,7 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
     # ── Rule 2 & 4: Summarize with LLM ──
 
     print("⟳ Summarizing with LLM...", file=sys.stderr, flush=True)
-    summary, key_points = summarize(chunks, query=query, depth=depth)
+    summary, key_points, tokens_used = summarize(chunks, query=query, depth=depth)
 
     # ── Save .brief file (depth 1-2 only, depth 0 is triage) ──
 
@@ -202,6 +203,7 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
         _store.save_query(
             uri, query, depth, brief_text,
             summary=summary, key_points=key_points,
+            tokens_used=tokens_used,
         )
         return f"brief created → .briefs/{slug}/\n\n{brief_text}"
 
@@ -236,6 +238,13 @@ def check_existing(uri: str = "") -> str:
             count = len(briefs)
             label = "comparison" if g.get("type") == "comparison" else "brief"
             lines.append(f"  {slug}/ ({count} {label}{'s' if count != 1 else ''})")
+
+        # Add stats
+        stats = _store.get_stats()
+        if stats["total_tokens_used"] > 0:
+            lines.append("")
+            lines.append(f"📊 {stats['total_tokens_used']:,} tokens spent, ~{stats['tokens_saved']:,} tokens saved by cache ({stats['total_cache_hits']} cache hits)")
+
         return "\n".join(lines)
 
     queries = _store.check_existing(uri)
