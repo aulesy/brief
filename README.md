@@ -14,7 +14,7 @@ Brief extracts content once across webpages, videos, PDFs, Reddit, and GitHub. E
 
 ## What Brief feels like
 
-Most agents read the web like a student the night before an exam: grab everything, highlight randomly, hope something sticks. Every page gets read cover to cover, tokens burning whether the content matters or not.
+Most agents read the web like a student the night before an exam: grab everything, highlight randomly, hope something sticks. Every page gets read cover to cover (or skimmed over), tokens burning whether the content matters or not.
 
 Brief works differently. Your agent doesn't read sources, it interviews them. Ask a question, get an answer. Move on. And because every answer is saved, a team of agents can share the work without any of them repeating it. The more your system runs, the more it already knows.
 
