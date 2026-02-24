@@ -96,11 +96,12 @@ def list_briefs() -> str:
 
 
 @mcp.tool()
-def compare_sources(uris: list[str], query: str = "summarize this content", depth: int = 2) -> str:
+def compare_sources(uris: list[str], query: str = "summarize this content", depth: int = 1) -> str:
     """Cross-reference multiple sources against the same question.
 
-    Briefs each URI (or uses cache), then renders all at the
-    same depth with the same query for apples-to-apples comparison.
+    Briefs each URI (or uses cache), then synthesizes a comparative
+    analysis across all sources. Returns the comparison only,
+    with TRAIL breadcrumbs pointing to individual briefs.
     Start with depth=1, go to 2 for more detail.
 
     IMPORTANT: Only pass URLs you have explicitly navigated to or
@@ -109,7 +110,7 @@ def compare_sources(uris: list[str], query: str = "summarize this content", dept
     Args:
         uris: List of URLs to compare
         query: The comparison question
-        depth: Detail level for all sources (0-2)
+        depth: Detail level 0-2 (0=headline, 1=summary, 2=deep dive)
     """
     from .service import compare
 
