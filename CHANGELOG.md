@@ -2,6 +2,16 @@
 
 All notable changes to Brief are documented here.
 
+## [0.6.1] - 2026-02-24
+
+### Added
+- Silent token usage tracking in SQLite (tokens spent per brief, cache hits)
+- `CHANGELOG.md` and `CONTRIBUTING.md`
+- PyPI, Python version, and license badges in README
+
+### Fixed
+- Removed noisy token stats from `check_brief()` output
+
 ## [0.6.0] - 2026-02-24
 
 ### Breaking Changes
