@@ -52,46 +52,42 @@ def brief_content(uri: str, query: str = "summarize this content", depth: int = 
 
 
 @mcp.tool()
-def check_existing_brief(uri: str) -> str:
+def check_existing_brief(uri: str = "") -> str:
     """Check if a brief already exists for this URI.
 
     Call this BEFORE brief_content() to avoid redundant work.
     Returns a list of queries already answered for this URL,
     or a message saying none exists.
 
+    If no URI is given, lists all briefed sources with counts.
+    Use this to see what research already exists.
+
     Args:
-        uri: URL to check
+        uri: URL to check (optional, omit to list all sources)
     """
-    from .service import check_existing
+    if uri:
+        from .service import check_existing
+        return check_existing(uri)
 
-    return check_existing(uri)
-
-
-@mcp.tool()
-def list_briefs() -> str:
-    """List all existing briefs in the .briefs/ folder.
-
-    Shows what content has already been briefed.
-    Use this to see what's available before requesting new briefs.
-    """
+    # No URI — return compact overview
     from .store import BriefStore
-
     store = BriefStore()
     groups = store.list_all()
     if not groups:
         return "no briefs yet"
 
-    lines = []
+    source_count = sum(1 for g in groups if g.get("type") != "comparison")
+    comp_count = sum(1 for g in groups if g.get("type") == "comparison")
+
+    lines = [f".briefs/ — {source_count} source{'s' if source_count != 1 else ''}, {comp_count} comparison{'s' if comp_count != 1 else ''}", ""]
     for g in groups:
-        uri = g.get("uri", "")
         slug = g.get("slug", "")
         briefs = g.get("briefs", [])
-        lines.append(f".briefs/{slug}/ ({len(briefs)} brief{'s' if len(briefs) != 1 else ''})")
-        if uri:
-            lines.append(f"  {uri}")
-        for b in briefs:
-            lines.append(f"  • {b['file']}: {b.get('preview', '')[:80]}")
-        lines.append("")
+        count = len(briefs)
+        label = "comparison" if g.get("type") == "comparison" else "brief"
+        lines.append(f"  {slug}/ ({count} {label}{'s' if count != 1 else ''})")
+    lines.append("")
+    lines.append("Pass a URL to check_existing_brief to see details for a specific source.")
     return "\n".join(lines)
 
 
