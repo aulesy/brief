@@ -1,5 +1,9 @@
 <div align="center">
   <img src="assets/logo.png" alt="Brief Logo" width="300" />
+
+  [![PyPI](https://img.shields.io/pypi/v/getbrief?color=blue)](https://pypi.org/project/getbrief/)
+  [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+  [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 </div>
 
 # Brief
