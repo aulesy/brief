@@ -87,7 +87,18 @@ def _extract_trafilatura(uri: str) -> str | None:
         return None
 
     try:
-        downloaded = trafilatura.fetch_url(uri)
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
+        # Hard 10-second cap on fetch — trafilatura's internal retry logic
+        # can silently retry 503s for 50+ seconds without this guard.
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(trafilatura.fetch_url, uri)
+            try:
+                downloaded = future.result(timeout=10)
+            except FuturesTimeoutError:
+                logger.debug("trafilatura.fetch_url timed out for %s (>10s), skipping", uri)
+                return None
+
         if not downloaded:
             return None
 
@@ -190,28 +201,48 @@ def _extract_playwright_fallback(uri: str) -> str | None:
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
-            page.goto(uri, wait_until="domcontentloaded", timeout=20000)
+            page.goto(uri, wait_until="networkidle", timeout=25000)
             html = page.content()
+
+            # Try trafilatura on the rendered HTML
+            text = None
+            if html and len(html) >= 100:
+                try:
+                    import trafilatura
+                    text = trafilatura.extract(
+                        html,
+                        include_links=True,
+                        include_images=False,
+                        include_tables=True,
+                        favor_recall=True,
+                    )
+                    if text and len(text.strip()) >= 50:
+                        text = text.strip()
+                except Exception:
+                    text = None
+
+            # Fallback: extract visible text directly from the page
+            if not text or len(text) < 50:
+                try:
+                    # Try article element first, then main, then body
+                    for selector in ["article", "main", "[role='main']", "body"]:
+                        try:
+                            el = page.query_selector(selector)
+                            if el:
+                                raw = el.inner_text()
+                                if raw and len(raw.strip()) >= 100:
+                                    text = raw.strip()
+                                    break
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+
             browser.close()
 
-        if not html or len(html) < 100:
-            return None
-
-        # Run trafilatura on the rendered HTML
-        try:
-            import trafilatura
-            text = trafilatura.extract(
-                html,
-                include_links=True,
-                include_images=False,
-                include_tables=True,
-                favor_recall=True,
-            )
-            if text and len(text.strip()) >= 50:
-                logger.info("Playwright fallback succeeded for %s", uri)
-                return text.strip()
-        except Exception:
-            pass
+            if text and len(text) >= 50:
+                logger.info("Playwright fallback succeeded for %s (%d chars)", uri, len(text))
+                return text
 
     except Exception as exc:
         logger.debug("Playwright fallback failed for %s: %s", uri, exc)
