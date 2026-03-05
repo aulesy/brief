@@ -24,7 +24,17 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_BRIEFS_DIR = Path.cwd() / ".briefs"
+
+def _default_briefs_dir() -> Path:
+    """Resolve the .briefs directory at runtime, not import time.
+
+    Checks BRIEF_STORE_DIR env var first, then falls back to CWD/.briefs.
+    """
+    import os
+    store_dir = os.environ.get("BRIEF_STORE_DIR")
+    if store_dir:
+        return Path(store_dir)
+    return Path.cwd() / ".briefs"
 
 
 class BriefStore:
@@ -32,7 +42,7 @@ class BriefStore:
         self,
         briefs_dir: str | Path | None = None,
     ) -> None:
-        self.briefs_dir = Path(briefs_dir) if briefs_dir else _DEFAULT_BRIEFS_DIR
+        self.briefs_dir = Path(briefs_dir) if briefs_dir else _default_briefs_dir()
         self.briefs_dir.mkdir(parents=True, exist_ok=True)
         self._db_path = str(self.briefs_dir / "_index.sqlite3")
         self._ensure_schema()
