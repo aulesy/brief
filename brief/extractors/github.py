@@ -520,44 +520,50 @@ def _match_files_to_query(query: str, file_tree_text: str, max_files: int = 5) -
     """Find files in the tree whose names/paths match query keywords.
 
     Returns a list of file paths sorted by relevance (best match first).
+    Also returns matching directory paths so fetch_query_files can explore them.
     """
     # Extract keywords from query
     words = set(query.lower().split()) - _STOPWORDS
     if not words:
         return []
 
-    # Parse file paths from the tree text
-    # Format: "    filename.ext (1.2 KB)"  or  "  dir/"
+    # Parse file paths AND directory paths from the tree text
     file_paths: list[str] = []
+    dir_paths: list[str] = []
     current_dirs: list[str] = []
+    base_indent: int | None = None  # auto-detect from first indented line
 
     for line in file_tree_text.split("\n"):
         stripped = line.rstrip()
         if not stripped or stripped.startswith("Repository structure:"):
             continue
 
-        # Determine depth from indentation
         indent = len(stripped) - len(stripped.lstrip())
         name = stripped.strip()
 
+        # Auto-detect base indent from first content line
+        if base_indent is None:
+            base_indent = indent
+
+        # Depth relative to base indent
+        depth = (indent - base_indent) // 2
+
         if name.endswith("/"):
-            # Directory
-            dir_depth = indent // 2
-            current_dirs = current_dirs[:dir_depth] + [name.rstrip("/")]
+            dir_name = name.rstrip("/")
+            current_dirs = current_dirs[:depth] + [dir_name]
+            full_dir = "/".join(current_dirs[:depth + 1])
+            dir_paths.append(full_dir)
         elif "(" in name and "B)" in name:
-            # File with size: "filename.ext (1.2 KB)"
             fname = name.split(" (")[0].strip()
-            dir_depth = indent // 2
-            dirs = current_dirs[:dir_depth]
+            dirs = current_dirs[:depth]
             full_path = "/".join(dirs + [fname]) if dirs else fname
             file_paths.append(full_path)
 
-    # Score each file by keyword match
+    # Score files by keyword match
     scored: list[tuple[float, str]] = []
     for path in file_paths:
         basename = path.rsplit("/", 1)[-1] if "/" in path else path
 
-        # Skip unwanted files
         if basename in _SKIP_FILENAMES:
             continue
         basename_lower = basename.lower()
@@ -566,25 +572,47 @@ def _match_files_to_query(query: str, file_tree_text: str, max_files: int = 5) -
         if basename.endswith((".lock", ".sum", ".map", ".min.js", ".min.css")):
             continue
 
-        # Score: how many query keyword stems appear in the path?
-        # Use crude stemming (first 4+ chars) so 'caching' matches 'cache'
         path_lower = path.lower()
         hits = 0
         for w in words:
-            stem = w[:4] if len(w) > 4 else w  # 'caching' → 'cach', 'api' → 'api'
+            stem = w[:4] if len(w) > 4 else w
             if stem in path_lower:
                 hits += 1
         if hits == 0:
             continue
 
-        # Prefer files in src/lib/app/core over examples/docs
         depth = path.count("/")
         score = hits + (0.1 if depth <= 2 else 0)
-
         scored.append((score, path))
 
+    # Score directories by keyword match — these will be explored by fetch_query_files
+    dir_scored: list[tuple[float, str]] = []
+    skip_dirs = {"test", "tests", "e2e", "docs", "doc", ".github", ".devcontainer",
+                 "node_modules", "vendor", "__pycache__", ".git"}
+    for dpath in dir_paths:
+        dirname = dpath.rsplit("/", 1)[-1] if "/" in dpath else dpath
+        if dirname.lower() in skip_dirs:
+            continue
+
+        dpath_lower = dpath.lower()
+        hits = 0
+        for w in words:
+            stem = w[:4] if len(w) > 4 else w
+            if stem in dpath_lower:
+                hits += 1
+        if hits > 0:
+            dir_scored.append((hits, dpath))
+
+    # Combine: files first, then directories (marked with trailing /)
     scored.sort(key=lambda x: -x[0])
-    return [path for _, path in scored[:max_files]]
+    dir_scored.sort(key=lambda x: -x[0])
+
+    results = [path for _, path in scored[:max_files]]
+    remaining = max_files - len(results)
+    if remaining > 0:
+        results += [dpath + "/" for _, dpath in dir_scored[:remaining]]
+
+    return results
 
 
 def fetch_query_files(
@@ -643,9 +671,91 @@ def fetch_query_files(
     api_base = f"https://api.github.com/repos/{owner}/{repo}/contents"
     code_lines = []
     fetched = 0
+    max_total = 5  # total files across all paths (files + directory explorations)
+
+    # Extract query stems for directory exploration
+    words = set(query.lower().split()) - _STOPWORDS
+    stems = {w[:4] if len(w) > 4 else w for w in words}
 
     for path in paths:
-        # Check local cache first
+        if fetched >= max_total:
+            break
+
+        # Directory path — explore its contents
+        if path.endswith("/"):
+            dir_path = path.rstrip("/")
+            try:
+                resp = httpx.get(
+                    f"{api_base}/{dir_path}",
+                    headers=headers,
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    items = resp.json()
+                    if isinstance(items, list):
+                        # Score files inside the directory
+                        dir_files = []
+                        for item in items:
+                            if item.get("type") != "file":
+                                continue
+                            name = item["name"].lower()
+                            if any(p in name for p in (".test.", ".spec.", "test_")):
+                                continue
+                            # Check if filename matches query
+                            name_score = sum(1 for s in stems if s in name)
+                            size = item.get("size", 0)
+                            if name_score > 0:
+                                dir_files.append((name_score, size, item["path"]))
+                            elif size < 20000:  # include small non-matching files too
+                                dir_files.append((0.1, size, item["path"]))
+
+                        # Take the best matching files from this directory
+                        dir_files.sort(key=lambda x: (-x[0], x[1]))
+                        for _, _, fpath in dir_files[:3]:
+                            if fetched >= max_total:
+                                break
+                            # Fetch this file
+                            file_key = fpath.replace("/", "--")
+                            if files_dir:
+                                cached = files_dir / file_key
+                                if cached.exists():
+                                    try:
+                                        code_lines.append(f"─── {fpath} ───\n{cached.read_text(encoding='utf-8')}")
+                                        fetched += 1
+                                        continue
+                                    except OSError:
+                                        pass
+
+                            fresp = httpx.get(f"{api_base}/{fpath}", headers=headers, timeout=10)
+                            if fresp.status_code == 200:
+                                fdata = fresp.json()
+                                raw = fdata.get("content", "")
+                                if raw and fdata.get("encoding") == "base64":
+                                    source = base64.b64decode(raw).decode("utf-8", errors="replace")
+                                    truncated = len(source) > max_file_bytes
+                                    if truncated:
+                                        source = source[:max_file_bytes]
+                                    if files_dir:
+                                        try:
+                                            (files_dir / file_key).write_text(source, encoding="utf-8")
+                                        except OSError:
+                                            pass
+                                    label = f"─── {fpath} ───"
+                                    if truncated:
+                                        label += f"\n[truncated at {max_file_bytes} bytes]"
+                                    code_lines.append(f"{label}\n{source}")
+                                    fetched += 1
+                            elif fresp.status_code == 403:
+                                logger.warning("Rate limited, stopping")
+                                break
+                elif resp.status_code == 403:
+                    logger.warning("Rate limited during dir listing, stopping")
+                    break
+            except Exception as exc:
+                logger.debug("Could not list dir %s: %s", dir_path, exc)
+            continue
+
+        # Regular file path — fetch directly
         cache_key = path.replace("/", "--")
         if files_dir:
             cached_file = files_dir / cache_key
@@ -658,7 +768,6 @@ def fetch_query_files(
                 except OSError:
                     pass
 
-        # Fetch from GitHub API
         try:
             resp = httpx.get(
                 f"{api_base}/{path}",
@@ -672,13 +781,11 @@ def fetch_query_files(
                 if raw and encoding == "base64":
                     source = base64.b64decode(raw).decode("utf-8", errors="replace")
 
-                    # Truncate if needed
                     truncated = False
                     if len(source) > max_file_bytes:
                         source = source[:max_file_bytes]
                         truncated = True
 
-                    # Cache locally
                     if files_dir:
                         try:
                             (files_dir / cache_key).write_text(source, encoding="utf-8")
