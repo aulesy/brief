@@ -27,6 +27,15 @@ logger = logging.getLogger(__name__)
 
 _store = BriefStore()
 
+# Cache freshness TTLs in days — None means never stale
+_FRESHNESS_TTL: dict[str, int | None] = {
+    "github": 7,
+    "reddit": 1,
+    "webpage": 3,
+    "video": None,
+    "pdf": None,
+}
+
 _VIDEO_SCHEMES = {"youtube.com", "youtu.be", "vimeo.com", "tiktok.com", "dailymotion.com"}
 _REDDIT_HOSTS = {"reddit.com", "old.reddit.com", "np.reddit.com"}
 _GITHUB_HOSTS = {"github.com"}
@@ -163,6 +172,24 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
     # ── Get chunks: from source cache or fresh extraction ──
 
     cached_source = _store.check_source(uri) if not force else None
+
+    # Check freshness — re-extract if source is stale
+    if cached_source:
+        content_type = cached_source.get("source", {}).get("type", "webpage")
+        created = cached_source.get("created", "")
+        ttl_days = _FRESHNESS_TTL.get(content_type)
+        if ttl_days is not None and created:
+            try:
+                from datetime import timedelta
+                created_dt = datetime.fromisoformat(created)
+                age = datetime.now(timezone.utc) - created_dt
+                if age > timedelta(days=ttl_days):
+                    logger.info("Source stale (%d days old, TTL=%d), re-extracting",
+                               age.days, ttl_days)
+                    cached_source = None  # force re-extraction
+            except (ValueError, TypeError):
+                pass
+
     if cached_source:
         chunks = cached_source.get("chunks", [])
         content_type = cached_source.get("source", {}).get("type", "webpage")
@@ -217,8 +244,19 @@ def get_brief_data(uri: str) -> dict[str, Any] | None:
     return _store.check_source(uri)
 
 
+def _looks_like_url(s: str) -> bool:
+    """Check if a string looks like a URL (vs a search query)."""
+    return s.startswith(("http://", "https://", "www.")) or "." in s.split("/")[0]
+
+
 def check_existing(uri: str = "") -> str:
-    """Check what briefs exist. No URI = compact overview, with URI = detail."""
+    """Check what briefs exist, lookup by URL, or search by topic.
+
+    Three modes:
+    - No input: compact overview of all sources
+    - URL input: show queries answered for that URL
+    - Topic input: full-text search across all briefs
+    """
     if not uri:
         # Compact overview of all sources
         groups = _store.list_all()
@@ -238,21 +276,44 @@ def check_existing(uri: str = "") -> str:
 
         return "\n".join(lines)
 
-    queries = _store.check_existing(uri)
-    if not queries:
-        return f"No briefs exist for {uri}. Call brief_content to create one."
+    # If it looks like a URL, do exact lookup
+    if _looks_like_url(uri):
+        queries = _store.check_existing(uri)
+        if not queries:
+            return f"No briefs exist for {uri}. Call brief_content to create one."
 
-    slug = _store._slugify(uri)
-    lines = [f"Briefs for {uri} (.briefs/{slug}/):", ""]
-    for q in queries:
-        label = q["query"]
-        depth_label = f"depth={q['depth']}" if q.get("depth") else ""
-        preview = q["summary"][:80] + "..." if len(q["summary"]) > 80 else q["summary"]
-        lines.append(f"  • {label} ({depth_label}): {q['filename']}")
+        slug = _store._slugify(uri)
+        lines = [f"Briefs for {uri} (.briefs/{slug}/):", ""]
+        for q in queries:
+            label = q["query"]
+            depth_label = f"depth={q['depth']}" if q.get("depth") else ""
+            preview = q["summary"][:80] + "..." if len(q["summary"]) > 80 else q["summary"]
+            lines.append(f"  • {label} ({depth_label}): {q['filename']}")
+            if preview:
+                lines.append(f"    {preview}")
+        lines.append("")
+        lines.append("Call brief_content with a new query to add more.")
+        return "\n".join(lines)
+
+    # Otherwise, treat as a search query
+    results = _store.search(uri)
+    if not results:
+        return f'No briefs found matching "{uri}".'
+
+    lines = [f'Search results for "{uri}":', ""]
+    seen = set()
+    for r in results:
+        # Deduplicate by (uri, query)
+        key = (r["uri"], r["query"])
+        if key in seen:
+            continue
+        seen.add(key)
+        preview = r["summary"][:100] + "..." if len(r["summary"]) > 100 else r["summary"]
+        lines.append(f"  {r['uri']}")
+        lines.append(f"    query: {r['query']}")
         if preview:
             lines.append(f"    {preview}")
-    lines.append("")
-    lines.append("Call brief_content with a new query to add more.")
+        lines.append("")
     return "\n".join(lines)
 
 

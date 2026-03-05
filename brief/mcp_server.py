@@ -65,30 +65,8 @@ def check_existing_brief(uri: str = "") -> str:
     Args:
         uri: URL to check (optional, omit to list all sources)
     """
-    if uri:
-        from .service import check_existing
-        return check_existing(uri)
-
-    # No URI — return compact overview
-    from .store import BriefStore
-    store = BriefStore()
-    groups = store.list_all()
-    if not groups:
-        return "no briefs yet"
-
-    source_count = sum(1 for g in groups if g.get("type") != "comparison")
-    comp_count = sum(1 for g in groups if g.get("type") == "comparison")
-
-    lines = [f".briefs/ — {source_count} source{'s' if source_count != 1 else ''}, {comp_count} comparison{'s' if comp_count != 1 else ''}", ""]
-    for g in groups:
-        slug = g.get("slug", "")
-        briefs = g.get("briefs", [])
-        count = len(briefs)
-        label = "comparison" if g.get("type") == "comparison" else "brief"
-        lines.append(f"  {slug}/ ({count} {label}{'s' if count != 1 else ''})")
-    lines.append("")
-    lines.append("Pass a URL to check_existing_brief to see details for a specific source.")
-    return "\n".join(lines)
+    from .service import check_existing
+    return check_existing(uri)
 
 
 @mcp.tool()

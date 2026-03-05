@@ -80,6 +80,27 @@ class BriefStore:
                     conn.execute(f"SELECT {col} FROM briefs LIMIT 1")
                 except sqlite3.OperationalError:
                     conn.execute(f"ALTER TABLE briefs ADD COLUMN {col} {default}")
+
+            # FTS5 for full-text search across briefs
+            try:
+                conn.execute(
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS briefs_fts
+                    USING fts5(uri, query, summary, key_points)
+                    """
+                )
+                # Backfill: sync any existing briefs rows not yet in FTS
+                fts_count = conn.execute("SELECT COUNT(*) FROM briefs_fts").fetchone()[0]
+                main_count = conn.execute("SELECT COUNT(*) FROM briefs").fetchone()[0]
+                if main_count > fts_count:
+                    conn.execute("DELETE FROM briefs_fts")
+                    conn.execute(
+                        """INSERT INTO briefs_fts (uri, query, summary, key_points)
+                           SELECT uri, query, summary, key_points FROM briefs"""
+                    )
+            except sqlite3.OperationalError:
+                pass  # FTS5 not available on this SQLite build
+
             conn.commit()
 
     @staticmethod
@@ -235,6 +256,14 @@ class BriefStore:
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (uri, key, query, depth, slug, filename, summary, kp_json, tokens_used, created),
             )
+            # Keep FTS index in sync
+            try:
+                conn.execute(
+                    "INSERT INTO briefs_fts (uri, query, summary, key_points) VALUES (?, ?, ?, ?)",
+                    (uri, query, summary, kp_json),
+                )
+            except sqlite3.OperationalError:
+                pass  # FTS table might not exist
             conn.commit()
 
     def record_cache_hit(self, uri: str, query: str, depth: int) -> None:
@@ -281,6 +310,38 @@ class BriefStore:
             {"query": r[0] or "summary", "depth": r[1], "filename": r[2], "summary": r[3] or ""}
             for r in rows
         ]
+
+    def search(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+        """Full-text search across all brief summaries and key points."""
+        with self._connect() as conn:
+            # Try FTS5 first
+            try:
+                rows = conn.execute(
+                    """SELECT uri, query, summary, key_points
+                       FROM briefs_fts WHERE briefs_fts MATCH ?
+                       LIMIT ?""",
+                    (query, limit),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                # Fallback: LIKE search on the main table
+                pattern = f"%{query}%"
+                rows = conn.execute(
+                    """SELECT uri, query, summary, key_points
+                       FROM briefs
+                       WHERE summary LIKE ? OR key_points LIKE ? OR query LIKE ?
+                       LIMIT ?""",
+                    (pattern, pattern, pattern, limit),
+                ).fetchall()
+
+        results = []
+        for r in rows:
+            results.append({
+                "uri": r[0],
+                "query": r[1] or "summary",
+                "summary": r[2] or "",
+                "key_points": r[3] or "[]",
+            })
+        return results
 
     def list_all(self) -> list[dict[str, Any]]:
         """List all briefs grouped by URL."""
