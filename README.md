@@ -103,6 +103,10 @@ check_brief()
 
 # Detail for a specific URL
 check_brief("https://fastapi.tiangolo.com/")
+
+# Search by topic across all briefs
+check_brief("authentication")
+# → matching briefs from any source that mentions authentication
 ```
 
 ## Depth levels
@@ -123,7 +127,7 @@ Brief handles five content types with the same interface:
 - **Videos** — [yt-dlp](https://github.com/yt-dlp/yt-dlp) fetches captions. If none exist, [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcribes audio locally.
 - **PDFs** — [pymupdf](https://pymupdf.readthedocs.io/) extracts text page by page.
 - **Reddit** — fetches post content and top comments via Reddit's JSON API.
-- **GitHub** — fetches repo metadata, README, file tree, and open issues via GitHub's API.
+- **GitHub** — fetches repo metadata, README, file tree, module docstrings, and open issues. When you ask a specific question, Brief reads the actual source files — ask about caching and it opens `cache-purge.js`, not just the README.
 
 ## Interfaces
 
@@ -163,7 +167,7 @@ brief --list
 This gives your agent three tools:
 
 - **brief_content** — brief a URL with a query at depth 0–2
-- **check_existing_brief** — no URI = overview of all sources, with URI = what's been asked about it
+- **check_existing_brief** — no URI = overview, URL = what's been asked, topic = search across all briefs
 - **compare_sources** — compare multiple URLs with synthesis + TRAIL breadcrumbs
 
 ### HTTP API
@@ -193,10 +197,11 @@ Every URL gets its own subdirectory. Each (query, depth) adds a new `.brief` fil
 .briefs/
 ├── fastapi-tiangolo-com/
 │   ├── _source.json                 raw extraction, no LLM output
+│   ├── _files/                      query-fetched source code (GitHub)
 │   ├── async-support.brief          depth=1 answer
 │   └── async-support-deep.brief     depth=2 answer, same query, richer
 ├── _comparisons/                    cached cross-source comparisons
-└── _index.sqlite3                   fast lookups
+└── _index.sqlite3                   fast lookups + full-text search
 ```
 
 Each `.brief` file includes a TRAIL section at the bottom, listing sibling briefs for the same source:
@@ -209,6 +214,8 @@ Each `.brief` file includes a TRAIL section at the bottom, listing sibling brief
 ```
 
 When an agent opens any `.brief` file, it instantly sees what else has already been asked about that source. No API call, no index lookup, just read the file. This means agents can build on each other's research naturally.
+
+Sources are re-extracted automatically when they go stale — GitHub repos after 7 days, webpages after 3, Reddit threads after 1 day, videos and PDFs never (they're immutable).
 
 ## Configuration
 
@@ -237,7 +244,7 @@ GITHUB_TOKEN=ghp_your-token
 
 - **Paywalled / auth-protected content** — Brief returns a clear error for 401/403/429 responses. It cannot extract content behind logins or paywalls.
 - **Bot protection (Cloudflare, etc.)** — Install Playwright: `pip install getbrief[playwright] && playwright install chromium`
-- **Stale or bad summary** — Use `--force` to skip cache and re-extract: `brief --uri <URL> --force`
+- **Stale data** — Brief auto-refreshes stale sources, but you can force re-extraction: `brief --uri <URL> --force`
 - **Clear all cached data** — Delete the `.briefs/` folder.
 - **LLM not responding** — Check your `.env` file has valid API keys. Brief falls back to a heuristic summary if the LLM is unavailable.
 
