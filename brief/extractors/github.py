@@ -494,3 +494,217 @@ def extract(uri: str) -> list[dict[str, Any]]:
 
     logger.info("Extracted %d chunks from GitHub: %s/%s", len(chunks), owner, repo)
     return chunks
+
+
+# ── Query-driven code fetching ──────────────────────────────────
+
+# Files to always skip in query matching
+_SKIP_FILENAMES = {
+    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock",
+    "go.sum", "Cargo.lock", "Gemfile.lock", "composer.lock",
+    ".gitignore", ".eslintrc", ".prettierrc", "tsconfig.json",
+    "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md",
+}
+
+_SKIP_PREFIXES = ("test_", "spec.", ".test.", "_test.", "mock_", "fixture_")
+
+# Common stopwords to ignore when matching query against filenames
+_STOPWORDS = {
+    "what", "how", "does", "the", "is", "it", "a", "an", "and", "or", "of",
+    "in", "to", "for", "this", "that", "with", "use", "work", "handle",
+    "are", "do", "its", "by", "from", "on", "at", "be", "was", "were",
+}
+
+
+def _match_files_to_query(query: str, file_tree_text: str, max_files: int = 5) -> list[str]:
+    """Find files in the tree whose names/paths match query keywords.
+
+    Returns a list of file paths sorted by relevance (best match first).
+    """
+    # Extract keywords from query
+    words = set(query.lower().split()) - _STOPWORDS
+    if not words:
+        return []
+
+    # Parse file paths from the tree text
+    # Format: "    filename.ext (1.2 KB)"  or  "  dir/"
+    file_paths: list[str] = []
+    current_dirs: list[str] = []
+
+    for line in file_tree_text.split("\n"):
+        stripped = line.rstrip()
+        if not stripped or stripped.startswith("Repository structure:"):
+            continue
+
+        # Determine depth from indentation
+        indent = len(stripped) - len(stripped.lstrip())
+        name = stripped.strip()
+
+        if name.endswith("/"):
+            # Directory
+            dir_depth = indent // 2
+            current_dirs = current_dirs[:dir_depth] + [name.rstrip("/")]
+        elif "(" in name and "B)" in name:
+            # File with size: "filename.ext (1.2 KB)"
+            fname = name.split(" (")[0].strip()
+            dir_depth = indent // 2
+            dirs = current_dirs[:dir_depth]
+            full_path = "/".join(dirs + [fname]) if dirs else fname
+            file_paths.append(full_path)
+
+    # Score each file by keyword match
+    scored: list[tuple[float, str]] = []
+    for path in file_paths:
+        basename = path.rsplit("/", 1)[-1] if "/" in path else path
+
+        # Skip unwanted files
+        if basename in _SKIP_FILENAMES:
+            continue
+        basename_lower = basename.lower()
+        if any(p in basename_lower for p in (".test.", ".spec.", "test_", "_test.", "mock_", "fixture_")):
+            continue
+        if basename.endswith((".lock", ".sum", ".map", ".min.js", ".min.css")):
+            continue
+
+        # Score: how many query keyword stems appear in the path?
+        # Use crude stemming (first 4+ chars) so 'caching' matches 'cache'
+        path_lower = path.lower()
+        hits = 0
+        for w in words:
+            stem = w[:4] if len(w) > 4 else w  # 'caching' → 'cach', 'api' → 'api'
+            if stem in path_lower:
+                hits += 1
+        if hits == 0:
+            continue
+
+        # Prefer files in src/lib/app/core over examples/docs
+        depth = path.count("/")
+        score = hits + (0.1 if depth <= 2 else 0)
+
+        scored.append((score, path))
+
+    scored.sort(key=lambda x: -x[0])
+    return [path for _, path in scored[:max_files]]
+
+
+def fetch_query_files(
+    uri: str,
+    query: str,
+    file_tree_text: str,
+    cache_dir: str | None = None,
+    max_file_bytes: int = 4096,
+) -> list[dict[str, Any]]:
+    """Fetch source files relevant to a query, with local caching.
+
+    This is Brief's differentiator: when you ask about caching,
+    Brief reads cache-purge.js — not just the README.
+
+    Args:
+        uri: GitHub repo URL
+        query: The user's question
+        file_tree_text: The file tree chunk text from _source.json
+        cache_dir: Path to URL's .briefs/ subdirectory (for _files/ cache)
+        max_file_bytes: Max bytes per file (truncated)
+
+    Returns:
+        List of chunk dicts with start_sec=1.8, or empty list if no matches.
+    """
+    import httpx
+    from pathlib import Path
+
+    # Parse owner/repo from URI
+    match = re.match(r"https?://github\.com/([^/]+)/([^/?#]+)", uri)
+    if not match:
+        return []
+
+    owner, repo = match.group(1), match.group(2).rstrip("/")
+
+    # Find relevant files
+    paths = _match_files_to_query(query, file_tree_text)
+    if not paths:
+        logger.debug("No query-relevant files found for '%s'", query)
+        return []
+
+    logger.info("Query-relevant files for '%s': %s", query, paths)
+
+    # Setup auth headers
+    import os
+    headers = dict(_HEADERS)
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("BRIEF_GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"token {token}"
+
+    # Setup file cache directory
+    files_dir = None
+    if cache_dir:
+        files_dir = Path(cache_dir) / "_files"
+        files_dir.mkdir(exist_ok=True)
+
+    api_base = f"https://api.github.com/repos/{owner}/{repo}/contents"
+    code_lines = []
+    fetched = 0
+
+    for path in paths:
+        # Check local cache first
+        cache_key = path.replace("/", "--")
+        if files_dir:
+            cached_file = files_dir / cache_key
+            if cached_file.exists():
+                try:
+                    content = cached_file.read_text(encoding="utf-8")
+                    code_lines.append(f"─── {path} ───\n{content}")
+                    fetched += 1
+                    continue
+                except OSError:
+                    pass
+
+        # Fetch from GitHub API
+        try:
+            resp = httpx.get(
+                f"{api_base}/{path}",
+                headers=headers,
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                raw = data.get("content", "")
+                encoding = data.get("encoding", "base64")
+                if raw and encoding == "base64":
+                    source = base64.b64decode(raw).decode("utf-8", errors="replace")
+
+                    # Truncate if needed
+                    truncated = False
+                    if len(source) > max_file_bytes:
+                        source = source[:max_file_bytes]
+                        truncated = True
+
+                    # Cache locally
+                    if files_dir:
+                        try:
+                            (files_dir / cache_key).write_text(source, encoding="utf-8")
+                        except OSError:
+                            pass
+
+                    label = f"─── {path} ───"
+                    if truncated:
+                        label += f"\n[truncated at {max_file_bytes} bytes]"
+                    code_lines.append(f"{label}\n{source}")
+                    fetched += 1
+
+            elif resp.status_code == 403:
+                logger.warning("Rate limited during query file fetch, stopping")
+                break
+        except Exception as exc:
+            logger.debug("Could not fetch %s: %s", path, exc)
+
+    if not code_lines:
+        return []
+
+    chunk_text = "Query-relevant source files:\n\n" + "\n\n".join(code_lines)
+    logger.info("Fetched %d query-relevant files for '%s'", fetched, query)
+
+    return [{
+        "text": chunk_text,
+        "start_sec": 1.8,
+    }]
+

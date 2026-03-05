@@ -138,6 +138,8 @@ def _structure_chunks(chunks: list[dict[str, Any]]) -> str:
             parts.append(f"--- METADATA ---\n{text}")
         elif text.startswith("Repository structure:") or text.startswith("Module docstrings:"):
             parts.append(f"--- {text.split(chr(10))[0].upper().rstrip(':')} ---\n{text}")
+        elif text.startswith("Query-relevant source files:"):
+            parts.append(f"--- SOURCE CODE ---\n{text}")
         elif text.startswith("Recent open issues:"):
             parts.append(f"--- ISSUES ---\n{text}")
         elif i == 1 and len(text) > 500:

@@ -211,6 +211,25 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
     if not chunks:
         return f"could not extract content from {uri}"
 
+    # ── Query-driven code fetching (GitHub only) ──
+    # When the query is specific, find and fetch relevant source files
+    if content_type == "github" and query and query != "summarize this content":
+        file_tree = next(
+            (c["text"] for c in chunks if c.get("text", "").startswith("Repository structure:")),
+            "",
+        )
+        if file_tree:
+            try:
+                from .extractors.github import fetch_query_files
+                extra = fetch_query_files(
+                    uri, query, file_tree,
+                    cache_dir=str(_store._url_dir(uri)),
+                )
+                if extra:
+                    chunks = chunks + extra
+            except Exception as exc:
+                logger.debug("Query file fetch failed: %s", exc)
+
     # ── Rule 2 & 4: Summarize with LLM ──
 
     print("⟳ Summarizing with LLM...", file=sys.stderr, flush=True)
