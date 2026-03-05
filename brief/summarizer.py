@@ -44,22 +44,26 @@ _PROMPTS = {
     1: {
         "system": (
             "You summarize content for AI agents. Be factual, direct, concise. "
-            "Lead with the answer to the question, not a generic description. "
-            "Respond with JSON: {\"summary\": \"2-3 sentences\", \"key_points\": [\"point1\", \"point2\", ...]}"
+            "IMPORTANT: Answer ONLY the specific question asked. Do NOT give a generic overview. "
+            "Do NOT start with what the project is. Start with the answer. "
+            "Only use information from sections relevant to the question. "
+            "Respond with JSON: {\"summary\": \"2-3 sentences answering the question\", \"key_points\": [\"point1\", \"point2\", ...]}"
         ),
-        "user": "Answer this question about the content: {query}\n\n{text}",
+        "user": "Answer this specific question: {query}\n\nOnly use information relevant to the question. Skip irrelevant sections.\n\n{text}",
         "user_generic": "Summarize this content:\n\n{text}",
         "max_tokens": 400,
     },
     2: {
         "system": (
-            "You are a research analyst. Provide a detailed, thorough analysis. "
-            "Include specifics: exact numbers, evidence, nuances, trade-offs, "
-            "and anything someone would need to fully understand this topic. "
-            "Respond with JSON: {\"summary\": \"detailed analysis, 5-10 sentences\", "
+            "You are a research analyst. Answer the SPECIFIC question asked. "
+            "Do NOT start with a generic project description. Start with the answer. "
+            "Include specifics: exact numbers, file names, config details, evidence. "
+            "Only extract information relevant to the question from the source material. "
+            "Ignore sections that don't relate to the question. "
+            "Respond with JSON: {\"summary\": \"detailed answer, 5-10 sentences\", "
             "\"key_points\": [\"specific point with details\", ...]}"
         ),
-        "user": "Deep dive into this topic: {query}\n\nAnalyze thoroughly:\n\n{text}",
+        "user": "Answer this specific question: {query}\n\nExtract ONLY information relevant to this question. Ignore unrelated sections.\n\n{text}",
         "user_generic": "Provide a detailed analysis of this content:\n\n{text}",
         "max_tokens": 1000,
     },
@@ -109,6 +113,42 @@ def _heuristic_summary(chunks: list[dict[str, Any]]) -> tuple[str, list[str]]:
     return summary, key_points
 
 
+def _structure_chunks(chunks: list[dict[str, Any]]) -> str:
+    """Format chunks with section labels so the LLM can identify relevant sections.
+
+    Instead of flattening everything into one wall of text, each chunk gets
+    a labeled header. This helps free models focus on query-relevant sections
+    instead of always summarizing the largest chunk (usually the README).
+    """
+    if not chunks:
+        return ""
+
+    # If there's only one chunk, no need to add labels
+    if len(chunks) == 1:
+        return chunks[0].get("text", "")
+
+    parts = []
+    for i, chunk in enumerate(chunks):
+        text = chunk.get("text", "").strip()
+        if not text:
+            continue
+
+        # Try to detect section type from content
+        if i == 0 and ("Stars:" in text or "Forks:" in text or "Language:" in text):
+            parts.append(f"--- METADATA ---\n{text}")
+        elif text.startswith("Repository structure:") or text.startswith("Module docstrings:"):
+            parts.append(f"--- {text.split(chr(10))[0].upper().rstrip(':')} ---\n{text}")
+        elif text.startswith("Recent open issues:"):
+            parts.append(f"--- ISSUES ---\n{text}")
+        elif i == 1 and len(text) > 500:
+            # Second chunk, long text = likely README
+            parts.append(f"--- README ---\n{text}")
+        else:
+            parts.append(text)
+
+    return "\n\n".join(parts)
+
+
 def _llm_summary(
     chunks: list[dict[str, Any]],
     query: str | None = None,
@@ -127,9 +167,9 @@ def _llm_summary(
         logger.debug("openai package not installed.")
         return None
 
-    # Feed ALL extracted content — no trimming.
-    # The model's context window handles it (32K+ for free models).
-    transcript = " ".join(c.get("text", "") for c in chunks)
+    # Structure chunks with section labels so the LLM can distinguish
+    # metadata vs README vs file tree vs issues, instead of one flat wall.
+    transcript = _structure_chunks(chunks)
 
     # Get depth-specific prompt config
     prompt_cfg = _PROMPTS.get(depth, _PROMPTS[1])
@@ -207,7 +247,17 @@ def _llm_summary(
                 logger.info("LLM summary generated (%d chars, depth=%d)", len(summary), depth)
                 max_summary = {0: 160, 1: 500, 2: 2000}.get(depth, 500)
                 max_kp = {0: 0, 1: 120, 2: 300}.get(depth, 120)
-                truncated_kp = [_truncate(str(kp), max_kp) for kp in key_points[:8]] if max_kp else []
+                # Handle key_points as either strings or objects
+                # (some models return [{"specific_point": ..., "details": ...}] instead of ["str", ...])
+                flat_kp = []
+                for kp in key_points[:8]:
+                    if isinstance(kp, dict):
+                        # Flatten object: combine all values
+                        parts = [str(v) for v in kp.values() if v]
+                        flat_kp.append(" — ".join(parts))
+                    else:
+                        flat_kp.append(str(kp))
+                truncated_kp = [_truncate(s, max_kp) for s in flat_kp] if max_kp else []
                 return _truncate(summary, max_summary), truncated_kp, tokens_used
 
         # LLM returned something but it wasn't valid JSON — use raw text as summary
