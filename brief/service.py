@@ -59,11 +59,8 @@ def _validate_url(uri: str) -> str | None:
                 "Do not guess or construct URLs. Only pass URLs you have explicitly "
                 "navigated to or confirmed exist."
             )
-        if resp.status_code in (401, 402, 403, 429):
-            return (
-                f"url blocked ({resp.status_code}) — '{uri}' requires authentication "
-                "or is behind a paywall/bot-protection. Brief cannot extract paywalled content."
-            )
+        # 403/401/429: don't bail early — let the extraction chain try
+        # (Playwright can often bypass bot protection that blocks HEAD requests)
     except Exception:
         pass
 
