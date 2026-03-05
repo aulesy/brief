@@ -300,7 +300,7 @@ def extract(uri: str) -> list[dict[str, Any]]:
 
         info_parts = [
             f"{meta.get('full_name', f'{owner}/{repo}')}",
-            f"{meta.get('description', 'No description')}",
+            f"{meta.get('description') or 'No description'}",
             "",
             f"Stars: {meta.get('stargazers_count', 0):,} | "
             f"Forks: {meta.get('forks_count', 0):,} | "
@@ -436,9 +436,12 @@ def extract(uri: str) -> list[dict[str, Any]]:
                                 docstring = _extract_js_docstring(source)
 
                             if docstring:
-                                # Collapse to single line for compact display
-                                one_line = " ".join(docstring.split())
-                                docstring_lines.append(f"  {path}: \"{one_line}\"")
+                                # Take just the first sentence for a clean summary
+                                first_line = docstring.split("\n\n")[0].strip()
+                                first_line = " ".join(first_line.split())  # normalize whitespace
+                                if len(first_line) > 120:
+                                    first_line = first_line[:117] + "..."
+                                docstring_lines.append(f"  {path}: {first_line}")
                                 fetched += 1
                     elif file_resp.status_code == 403:
                         logger.warning("Rate limited while fetching docstrings, stopping")
