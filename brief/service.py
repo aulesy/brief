@@ -259,9 +259,14 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
         if file_tree:
             try:
                 from .extractors.local import fetch_query_files
+                docstrings_text = next(
+                    (c["text"] for c in chunks if c.get("text", "").startswith("Module docstrings:")),
+                    "",
+                )
                 extra = fetch_query_files(
                     uri, query, file_tree,
                     cache_dir=str(_store._url_dir(uri)),
+                    docstrings_text=docstrings_text,
                 )
                 if extra:
                     query_files = extra

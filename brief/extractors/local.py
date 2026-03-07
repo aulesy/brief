@@ -126,7 +126,8 @@ def extract(uri: str) -> list[dict[str, Any]]:
         tree = _build_tree(path)
         chunks.append({"text": tree, "start_sec": 0})
 
-        # Read code files
+        # Read code files + collect docstrings
+        docstring_lines = ["Module docstrings:"]
         for fpath in _walk_code_files(path):
             try:
                 content = fpath.read_text(encoding="utf-8", errors="replace")
@@ -135,12 +136,92 @@ def extract(uri: str) -> list[dict[str, Any]]:
                     "text": f"── {rel} ──\n{content}",
                     "start_sec": 0,
                 })
+
+                # Extract module-level docstring (same as GitHub extractor)
+                docstring = _extract_module_docstring(fpath, content)
+                if docstring:
+                    first_line = docstring.split("\n\n")[0].strip()
+                    if len(first_line) > 200:
+                        first_line = first_line[:200] + "…"
+                    docstring_lines.append(f"  {rel}: {first_line}")
             except (OSError, UnicodeDecodeError):
                 continue
+
+        # Add docstrings chunk if we found any
+        if len(docstring_lines) > 1:
+            chunks.append({
+                "text": "\n".join(docstring_lines),
+                "start_sec": 0,
+            })
 
         return chunks
 
     return []
+
+
+# ── Module docstring extraction ─────────────────────────────────
+
+_PYTHON_EXTENSIONS = {".py"}
+_JS_EXTENSIONS = {".js", ".ts", ".jsx", ".tsx", ".mjs"}
+
+
+def _extract_module_docstring(fpath: Path, content: str) -> str | None:
+    """Extract the module-level docstring from a source file.
+
+    Supports Python (ast.parse + regex fallback) and JS/TS (JSDoc).
+    """
+    import ast
+    import re
+
+    suffix = fpath.suffix.lower()
+
+    if suffix in _PYTHON_EXTENSIONS:
+        # Try ast.parse first
+        try:
+            tree = ast.parse(content)
+            ds = ast.get_docstring(tree)
+            if ds:
+                return ds[:300]
+        except SyntaxError:
+            pass
+        # Regex fallback
+        m = re.match(
+            r'^(?:\s*#[^\n]*\n)*\s*'
+            r'(?:from\s+__future__[^\n]*\n)*'
+            r'\s*(?:'
+            r'"""(.*?)"""|'
+            r"'''(.*?)''')",
+            content,
+            re.DOTALL,
+        )
+        if m:
+            ds = (m.group(1) or m.group(2) or "").strip()
+            if ds:
+                return ds[:300]
+
+    elif suffix in _JS_EXTENSIONS:
+        m = re.match(
+            r'^(?:#![^\n]*\n)?'
+            r'(?:\s*(?://[^\n]*\n)*)?'
+            r"(?:\s*['\"]use strict['\"];?\s*)?"
+            r'\s*/\*\*(.*?)\*/',
+            content,
+            re.DOTALL,
+        )
+        if m:
+            lines = []
+            for line in m.group(1).split("\n"):
+                import re as _re
+                cleaned = _re.sub(r'^\s*\*\s?', '', line).strip()
+                if cleaned.startswith("@"):
+                    break
+                if cleaned:
+                    lines.append(cleaned)
+            ds = " ".join(lines).strip()
+            if ds:
+                return ds[:300]
+
+    return None
 
 
 # ── Query-driven code fetching ──────────────────────────────────
@@ -161,28 +242,89 @@ _SKIP_NAMES = {
     "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md",
 }
 
+# Common code abbreviations — bidirectional so "auth" matches
+# "authentication" and "authentication" matches "auth"
+_ABBREVIATIONS: dict[str, list[str]] = {
+    "auth":   ["authentication", "authorization", "authenticate"],
+    "config": ["configuration", "cfg", "conf"],
+    "db":     ["database"],
+    "msg":    ["message"],
+    "req":    ["request"],
+    "res":    ["response"],
+    "err":    ["error"],
+    "ctx":    ["context"],
+    "fn":     ["function"],
+    "impl":   ["implementation", "implement"],
+    "init":   ["initialize", "initialization"],
+    "env":    ["environment"],
+    "util":   ["utility", "utilities"],
+    "param":  ["parameter"],
+    "pkg":    ["package"],
+    "src":    ["source"],
+    "tmp":    ["temporary"],
+    "cmd":    ["command"],
+    "dir":    ["directory"],
+    "doc":    ["document", "documentation"],
+    "sync":   ["synchronize", "synchronous"],
+    "gen":    ["generate", "generator"],
+    "fmt":    ["format"],
+    "conn":   ["connection"],
+    "repo":   ["repository"],
+    "ref":    ["reference"],
+    "idx":    ["index"],
+}
+
+# Build reverse map: "authentication" → stems to check for "auth"
+_ABBREV_REVERSE: dict[str, set[str]] = {}
+for _abbr, _fulls in _ABBREVIATIONS.items():
+    for _full in _fulls:
+        _ABBREV_REVERSE.setdefault(_full, set()).add(_abbr)
+        _ABBREV_REVERSE.setdefault(_abbr, set()).add(_full)
+
+
+def _expand_to_stems(words: set[str]) -> set[str]:
+    """Convert query words to stems, including abbreviation expansion.
+
+    "authentication" → stems for "auth", "authentication", plus 4-char prefix "auth"
+    "cfg" → stems for "config", "configuration", "cfg"
+    """
+    stems = set()
+    for w in words:
+        # 4-char prefix stem
+        stems.add(w[:4] if len(w) > 4 else w)
+        # Add the full word too (for short abbreviations like "db", "cfg")
+        stems.add(w)
+        # Abbreviation expansion
+        if w in _ABBREV_REVERSE:
+            for alt in _ABBREV_REVERSE[w]:
+                stems.add(alt[:4] if len(alt) > 4 else alt)
+                stems.add(alt)
+    return stems
+
 
 def fetch_query_files(
     project_path: str,
     query: str,
     file_tree: str,
     cache_dir: str = "",
+    docstrings_text: str = "",
 ) -> list[dict[str, Any]]:
     """Find and read files relevant to a query from a local project.
 
-    Uses stopword removal and 4-char prefix stemming (same as GitHub extractor)
-    to match query keywords against file paths. Returns matching files as chunks,
-    ordered by match quality.
+    Three-phase matching:
+    1. Path matching with stemming + abbreviation expansion
+    2. Docstring grep (if docstrings available)
+    3. Content grep fallback (scans file contents)
     """
     root = Path(project_path).resolve()
     if not root.is_dir():
         return []
 
-    # Extract keywords: remove stopwords, stem to 4-char prefixes
+    # Extract keywords: remove stopwords, expand via abbreviations
     words = set(query.lower().split()) - _STOPWORDS
     if not words:
         return []
-    stems = {w[:4] if len(w) > 4 else w for w in words}
+    stems = _expand_to_stems(words)
 
     # Score all code files by keyword match
     scored: list[tuple[float, Path]] = []
@@ -207,6 +349,28 @@ def fetch_query_files(
         depth = rel.count(os.sep)
         score = hits + (0.1 if depth <= 2 else 0)
         scored.append((score, fpath))
+
+    if not scored and docstrings_text:
+        # Phase 2: search docstrings for stems
+        # Same format as GitHub: "  filepath: description"
+        docstring_matches = []
+        for line in docstrings_text.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("Module docstrings"):
+                continue
+            if ": " not in line:
+                continue
+            dpath, desc = line.split(": ", 1)
+            dpath = dpath.strip()
+            if not dpath:
+                continue
+            desc_lower = desc.lower()
+            hits = sum(1 for s in stems if s in desc_lower)
+            if hits > 0:
+                # Find the actual file on disk
+                candidate = root / dpath
+                if candidate.is_file():
+                    scored.append((hits + 0.2, candidate))  # slight bonus over content grep
 
     if not scored:
         # Fallback: search file CONTENTS for stems.
