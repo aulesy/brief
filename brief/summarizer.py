@@ -113,13 +113,22 @@ def _heuristic_summary(chunks: list[dict[str, Any]]) -> tuple[str, list[str]]:
     return summary, key_points
 
 
-def _structure_chunks(chunks: list[dict[str, Any]]) -> str:
+def _structure_chunks(
+    chunks: list[dict[str, Any]],
+    query_files: list[dict[str, Any]] | None = None,
+) -> str:
     """Format chunks with section labels so the LLM can identify relevant sections.
 
-    Instead of flattening everything into one wall of text, each chunk gets
-    a labeled header. This helps free models focus on query-relevant sections
-    instead of always summarizing the largest chunk (usually the README).
+    Two modes:
+    - No query files: full context (metadata, README, tree, docstrings, issues).
+      This is the default for generic queries like "summarize this content".
+    - Has query files: lead with query-matched source code, include only
+      minimal project context. The query-file fetcher already selected the
+      relevant files — we trust that selection and build the prompt around it.
     """
+    if query_files:
+        return _structure_with_query_files(chunks, query_files)
+
     if not chunks:
         return ""
 
@@ -151,10 +160,54 @@ def _structure_chunks(chunks: list[dict[str, Any]]) -> str:
     return "\n\n".join(parts)
 
 
+def _structure_with_query_files(
+    base_chunks: list[dict[str, Any]],
+    query_files: list[dict[str, Any]],
+) -> str:
+    """Build prompt leading with query-matched source code.
+
+    The query-file fetcher already selected relevant files — we trust that
+    selection. The LLM gets the actual code first, with just enough project
+    context (name, description, language) to understand what it's looking at.
+
+    Everything else (full README, file tree, docstrings, issues) is available
+    in _source.json for generic queries. For specific questions, it's noise
+    that dilutes the LLM's attention away from the code that answers them.
+    """
+    parts = []
+
+    # 1. Query-matched source code — the primary content
+    for chunk in query_files:
+        text = chunk.get("text", "").strip()
+        if text:
+            parts.append(text)
+
+    # 2. Minimal project context from base extraction
+    #    Just the metadata chunk (project name, description, stars, language)
+    #    — enough for the LLM to understand the project, not enough to
+    #    distract it from answering the specific question.
+    for chunk in base_chunks:
+        text = chunk.get("text", "").strip()
+        if not text:
+            continue
+        # GitHub: metadata chunk has Stars:/Forks:/Language: markers
+        if "Stars:" in text or "Forks:" in text or "Language:" in text:
+            parts.append(f"--- PROJECT CONTEXT ---\n{text}")
+            break
+        # Local: include just the project tree header (first 15 lines)
+        if text.startswith("Project structure:"):
+            tree_lines = text.split("\n")[:15]
+            parts.append(f"--- PROJECT CONTEXT ---\n" + "\n".join(tree_lines))
+            break
+
+    return "\n\n".join(parts)
+
+
 def _llm_summary(
     chunks: list[dict[str, Any]],
     query: str | None = None,
     depth: int = 1,
+    query_files: list[dict[str, Any]] | None = None,
 ) -> tuple[str, list[str]] | None:
     """Generate summary via any OpenAI-compatible API."""
     api_key, base_url, model = _get_llm_config()
@@ -169,9 +222,8 @@ def _llm_summary(
         logger.debug("openai package not installed.")
         return None
 
-    # Structure chunks with section labels so the LLM can distinguish
-    # metadata vs README vs file tree vs issues, instead of one flat wall.
-    transcript = _structure_chunks(chunks)
+    # Structure chunks — when query files exist, lead with them
+    transcript = _structure_chunks(chunks, query_files=query_files)
 
     # Get depth-specific prompt config
     prompt_cfg = _PROMPTS.get(depth, _PROMPTS[1])
@@ -409,6 +461,7 @@ def summarize(
     chunks: list[dict[str, Any]],
     query: str | None = None,
     depth: int = 1,
+    query_files: list[dict[str, Any]] | None = None,
 ) -> tuple[str, list[str], int]:
     """Generate a depth-aware, query-focused summary.
 
@@ -416,9 +469,12 @@ def summarize(
     depth=1: 2-3 sentence summary + key points
     depth=2: detailed analysis with specifics
 
+    When query_files is provided, the prompt leads with those files
+    and includes only minimal project context from base chunks.
+
     Returns (summary, key_points, tokens_used).
     """
-    llm_result = _llm_summary(chunks, query=query, depth=depth)
+    llm_result = _llm_summary(chunks, query=query, depth=depth, query_files=query_files)
     if llm_result is not None:
         return llm_result
 

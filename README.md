@@ -23,6 +23,9 @@ brief("https://fastapi.tiangolo.com/", "async support", depth=1)
 
 # Give me everything. (detailed analysis with examples)
 brief("https://fastapi.tiangolo.com/", "async support", depth=2)
+
+# Works with local projects too
+brief("./my-project", "how does authentication work", depth=1)
 ```
 
 Every answer is cached as a plain `.brief` file. Ask once, reuse forever. A team of agents can share research without repeating work. One agent investigates, another reasons, another writes, and nobody re-reads the same source.
@@ -121,13 +124,14 @@ Each (query, depth) pair produces its own `.brief` file.
 
 ## Content types
 
-Brief handles five content types with the same interface:
+Brief handles six content types with the same interface:
 
 - **Webpages** — [trafilatura](https://trafilatura.readthedocs.io/) strips navigation, ads, and scripts. Falls back to [httpx](https://www.python-httpx.org/), then optionally [Playwright](https://playwright.dev/) for bot-protected sites.
 - **Videos** — [yt-dlp](https://github.com/yt-dlp/yt-dlp) fetches captions. If none exist, [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcribes audio locally.
 - **PDFs** — [pymupdf](https://pymupdf.readthedocs.io/) extracts text page by page.
 - **Reddit** — fetches post content and top comments via Reddit's JSON API.
-- **GitHub** — fetches repo metadata, README, file tree, module docstrings, and open issues. When you ask a specific question, Brief reads the actual source files — ask about caching and it opens `cache-purge.js`, not just the README.
+- **GitHub** — repo metadata, README, file tree, docstrings, and issues. Ask a specific question and Brief reads the source files that answer it — not just the README.
+- **Local paths** — project directories and files from disk. Ask about caching and Brief finds every file that mentions it, even if no file is named `cache`.
 
 ## Interfaces
 

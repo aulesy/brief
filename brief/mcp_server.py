@@ -26,7 +26,7 @@ mcp = FastMCP("brief")
 
 @mcp.tool()
 def brief_content(uri: str, query: str = "summarize this content", depth: int = 1) -> str:
-    """Brief a piece of content (video, webpage, PDF, Reddit, GitHub).
+    """Brief a piece of content (video, webpage, PDF, Reddit, GitHub, local path).
 
     Extracts content, generates a summary, caches the result.
     Returns a text brief at the requested depth:
@@ -42,7 +42,7 @@ def brief_content(uri: str, query: str = "summarize this content", depth: int = 
     If the URL returns a 404 error, search for the correct URL first.
 
     Args:
-        uri: URL of the content (YouTube video, webpage, etc.)
+        uri: URL of the content (YouTube video, webpage, etc.) or local file/directory path
         query: What you want to know about this content
         depth: Detail level 0-2 (0=headline, 1=summary, 2=deep dive)
     """

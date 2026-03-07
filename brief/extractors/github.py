@@ -615,17 +615,62 @@ def _match_files_to_query(query: str, file_tree_text: str, max_files: int = 5) -
     return results
 
 
+def _match_docstrings_to_query(
+    query: str, docstrings_text: str, max_files: int = 5,
+) -> list[str]:
+    """Find files whose docstrings mention query terms.
+
+    Fallback when path matching fails. The docstrings chunk has lines like:
+      store.py: Brief store — file-based .briefs/ folder + SQLite index.
+
+    If a query stem appears in the description, we return that file path.
+    This catches cases like 'caching' → store.py where the word 'cache'
+    appears in the docstring but not the filename.
+    """
+    words = set(query.lower().split()) - _STOPWORDS
+    if not words:
+        return []
+    stems = {w[:4] if len(w) > 4 else w for w in words}
+
+    scored: list[tuple[float, str]] = []
+    for line in docstrings_text.split("\n"):
+        line = line.strip()
+        if not line or line.startswith("Module docstrings"):
+            continue
+        # Format: "filepath: description"
+        if ": " not in line:
+            continue
+        path, desc = line.split(": ", 1)
+        path = path.strip()
+        if not path:
+            continue
+
+        desc_lower = desc.lower()
+        hits = sum(1 for s in stems if s in desc_lower)
+        if hits > 0:
+            scored.append((hits, path))
+
+    scored.sort(key=lambda x: -x[0])
+    return [path for _, path in scored[:max_files]]
+
+
 def fetch_query_files(
     uri: str,
     query: str,
     file_tree_text: str,
     cache_dir: str | None = None,
     max_file_bytes: int = 4096,
+    docstrings_text: str = "",
 ) -> list[dict[str, Any]]:
     """Fetch source files relevant to a query, with local caching.
 
     This is Brief's differentiator: when you ask about caching,
     Brief reads cache-purge.js — not just the README.
+
+    Uses two-phase matching:
+    1. Path matching: query stems vs filenames (fast, catches obvious cases)
+    2. Docstring grep: query stems vs module docstrings (catches semantic matches
+       like 'caching' → store.py when the docstring mentions 'cache')
 
     Args:
         uri: GitHub repo URL
@@ -633,6 +678,7 @@ def fetch_query_files(
         file_tree_text: The file tree chunk text from _source.json
         cache_dir: Path to URL's .briefs/ subdirectory (for _files/ cache)
         max_file_bytes: Max bytes per file (truncated)
+        docstrings_text: Module docstrings chunk text (for fallback matching)
 
     Returns:
         List of chunk dicts with start_sec=1.8, or empty list if no matches.
@@ -647,8 +693,12 @@ def fetch_query_files(
 
     owner, repo = match.group(1), match.group(2).rstrip("/")
 
-    # Find relevant files
+    # Find relevant files: path matching first, then docstring fallback
     paths = _match_files_to_query(query, file_tree_text)
+    if not paths and docstrings_text:
+        paths = _match_docstrings_to_query(query, docstrings_text)
+        if paths:
+            logger.info("Docstring fallback matched for '%s': %s", query, paths)
     if not paths:
         logger.debug("No query-relevant files found for '%s'", query)
         return []

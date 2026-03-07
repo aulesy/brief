@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from urllib.parse import urlparse
 
 MEDIA_EXTENSIONS = {".mp4", ".webm", ".m3u8", ".mpd", ".mov", ".avi", ".mkv"}
@@ -10,8 +11,26 @@ REDDIT_HOSTS = {"reddit.com", "old.reddit.com", "np.reddit.com"}
 GITHUB_HOSTS = {"github.com"}
 
 
+def _is_local_path(uri: str) -> bool:
+    """Check if a URI is a local file/directory path."""
+    # Obvious local paths: absolute paths, drive letters, relative paths that exist
+    if os.path.exists(uri):
+        return True
+    # Windows drive letters (C:\...) or UNC paths (\\server\...)
+    if len(uri) >= 2 and uri[1] == ":":
+        return True
+    # Unix absolute paths that aren't URLs
+    if uri.startswith("/") and not uri.startswith("//"):
+        return True
+    return False
+
+
 def detect_type(uri: str) -> str:
-    """Detect content type from URI. Returns 'video', 'webpage', 'pdf', etc."""
+    """Detect content type from URI. Returns 'video', 'webpage', 'pdf', 'local', etc."""
+    # Check local path FIRST — before urlparse mangles Windows paths
+    if _is_local_path(uri):
+        return "local"
+
     parsed = urlparse(uri)
     path_lower = parsed.path.lower()
 

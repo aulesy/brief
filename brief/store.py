@@ -109,7 +109,23 @@ class BriefStore:
 
     @staticmethod
     def _slugify(uri: str) -> str:
-        """Create a short readable directory name from a URI."""
+        """Create a short readable directory name from a URI or local path."""
+        import os
+
+        # Local paths: use directory name (last component)
+        if os.path.exists(uri) or (len(uri) >= 2 and uri[1] == ":"):
+            p = Path(uri).resolve()
+            if p.is_file():
+                # For files: parent-name (e.g. "brief-service")
+                parts = [p.parent.name, p.stem] if p.parent.name else [p.stem]
+            else:
+                # For directories: just the dir name (e.g. "brief")
+                parts = [p.name]
+            slug = "-".join(parts)
+            slug = re.sub(r"[^a-z0-9-]", "-", slug.lower())
+            slug = re.sub(r"-{2,}", "-", slug).strip("-")
+            return slug[:60] or "local"
+
         from urllib.parse import urlparse
 
         parsed = urlparse(uri)
@@ -419,6 +435,11 @@ class BriefStore:
     @staticmethod
     def _short_slug(uri: str) -> str:
         """Extract a short readable name from a URI for comparison filenames."""
+        import os
+        # Local paths
+        if os.path.exists(uri) or (len(uri) >= 2 and uri[1] == ":"):
+            return re.sub(r"[^a-z0-9]", "-", Path(uri).resolve().name.lower()).strip("-")[:20] or "local"
+
         from urllib.parse import urlparse
         parsed = urlparse(uri)
         host = (parsed.hostname or "unknown").replace("www.", "")

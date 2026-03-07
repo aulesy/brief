@@ -34,6 +34,7 @@ _FRESHNESS_TTL: dict[str, int | None] = {
     "webpage": 3,
     "video": None,
     "pdf": None,
+    "local": None,  # local files: user controls freshness via --force
 }
 
 _VIDEO_SCHEMES = {"youtube.com", "youtu.be", "vimeo.com", "tiktok.com", "dailymotion.com"}
@@ -42,10 +43,17 @@ _GITHUB_HOSTS = {"github.com"}
 
 
 def _validate_url(uri: str) -> str | None:
-    """Check if a URL is reachable before attempting extraction.
+    """Check if a URL or path is reachable before attempting extraction.
 
-    Returns None if the URL is valid, or an error string explaining the problem.
+    Returns None if valid, or an error string explaining the problem.
     """
+    # Local paths: just check existence
+    if detect_type(uri) == "local":
+        import os
+        if not os.path.exists(uri):
+            return f"path not found: '{uri}' does not exist on disk."
+        return None
+
     from urllib.parse import urlparse
     parsed = urlparse(uri)
     host = parsed.hostname or ""
@@ -121,6 +129,9 @@ def _extract(uri: str) -> tuple[str, list[dict[str, Any]]] | None:
     elif content_type == "pdf":
         from .extractors.pdf import extract as extract_pdf
         chunks = extract_pdf(uri)
+    elif content_type == "local":
+        from .extractors.local import extract as extract_local
+        chunks = extract_local(uri)
     else:
         return None
 
@@ -211,8 +222,12 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
     if not chunks:
         return f"could not extract content from {uri}"
 
-    # ── Query-driven code fetching (GitHub only) ──
-    # When the query is specific, find and fetch relevant source files
+    # ── Query-driven code fetching ──
+    # When the query is specific, find and fetch relevant source files.
+    # These are passed separately to the summarizer so it can lead the
+    # prompt with them instead of burying them after generic context.
+    query_files: list[dict[str, Any]] = []
+
     if content_type == "github" and query and query != "summarize this content":
         file_tree = next(
             (c["text"] for c in chunks if c.get("text", "").startswith("Repository structure:")),
@@ -221,19 +236,42 @@ def brief(uri: str, query: str, force: bool = False, depth: int = 1) -> str:
         if file_tree:
             try:
                 from .extractors.github import fetch_query_files
+                # Extract docstrings chunk for fallback matching
+                docstrings_text = next(
+                    (c["text"] for c in chunks if c.get("text", "").startswith("Module docstrings:")),
+                    "",
+                )
+                extra = fetch_query_files(
+                    uri, query, file_tree,
+                    cache_dir=str(_store._url_dir(uri)),
+                    docstrings_text=docstrings_text,
+                )
+                if extra:
+                    query_files = extra
+            except Exception as exc:
+                logger.debug("Query file fetch failed: %s", exc)
+
+    elif content_type == "local" and query and query != "summarize this content":
+        file_tree = next(
+            (c["text"] for c in chunks if c.get("text", "").startswith("Project structure:")),
+            "",
+        )
+        if file_tree:
+            try:
+                from .extractors.local import fetch_query_files
                 extra = fetch_query_files(
                     uri, query, file_tree,
                     cache_dir=str(_store._url_dir(uri)),
                 )
                 if extra:
-                    chunks = chunks + extra
+                    query_files = extra
             except Exception as exc:
-                logger.debug("Query file fetch failed: %s", exc)
+                logger.debug("Local query file fetch failed: %s", exc)
 
     # ── Rule 2 & 4: Summarize with LLM ──
 
     print("⟳ Summarizing with LLM...", file=sys.stderr, flush=True)
-    summary, key_points, tokens_used = summarize(chunks, query=query, depth=depth)
+    summary, key_points, tokens_used = summarize(chunks, query=query, depth=depth, query_files=query_files)
 
     # ── Save .brief file (depth 1-2 only, depth 0 is triage) ──
 
@@ -264,7 +302,10 @@ def get_brief_data(uri: str) -> dict[str, Any] | None:
 
 
 def _looks_like_url(s: str) -> bool:
-    """Check if a string looks like a URL (vs a search query)."""
+    """Check if a string looks like a URL or local path (vs a search query)."""
+    import os
+    if os.path.exists(s) or (len(s) >= 2 and s[1] == ":"):
+        return True
     return s.startswith(("http://", "https://", "www.")) or "." in s.split("/")[0]
 
 
